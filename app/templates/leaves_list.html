@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Leave Requests{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Leave Requests</h1>
+    <form method="post" action="/sync">
+      <button type="submit" class="btn btn-secondary">Sync from BioTime</button>
+    </form>
+  </div>
+
+  {% if message %}<div class="flash flash-ok">{{ message }}</div>{% endif %}
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+  <form method="get" action="/leaves" class="filters">
+    <select name="department">
+      <option value="">All departments</option>
+      {% for d in departments %}
+        <option value="{{ d }}" {% if filters.department == d %}selected{% endif %}>{{ d }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="emp_code" placeholder="Employee code" value="{{ filters.emp_code }}">
+    <select name="approval_status">
+      <option value="">All statuses</option>
+      <option value="0" {% if filters.approval_status == "0" %}selected{% endif %}>Pending</option>
+      <option value="1" {% if filters.approval_status == "1" %}selected{% endif %}>Cancelled</option>
+      <option value="2" {% if filters.approval_status == "2" %}selected{% endif %}>Approved</option>
+      <option value="3" {% if filters.approval_status == "3" %}selected{% endif %}>Rejected</option>
+    </select>
+    <button type="submit" class="btn">Filter</button>
+  </form>
+
+  <table class="leave-table">
+    <thead>
+      <tr>
+        <th>Employee</th>
+        <th>Department</th>
+        <th>Leave Type</th>
+        <th>Start</th>
+        <th>End</th>
+        <th>Days</th>
+        <th>Reason</th>
+        <th>Status</th>
+        <th>Approver</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in leaves %}
+        <tr>
+          <td>{{ l.employee_name }} <span class="muted">({{ l.emp_code }})</span></td>
+          <td>{{ l.department }}</td>
+          <td>{{ l.pay_code_name }}</td>
+          <td>{{ l.start_time }}</td>
+          <td>{{ l.end_time }}</td>
+          <td>{{ l.leave_day if l.leave_day is not none else "-" }}</td>
+          <td>{{ l.apply_reason }}</td>
+          <td>
+            <span class="badge badge-{{ l.approval_status_display|lower }}">
+              {{ l.approval_status_display }}
+            </span>
+          </td>
+          <td>{{ l.approver or "-" }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="muted">No leave requests cached yet. Try Sync from BioTime.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}New Leave Request{% endblock %}
+{% block content %}
+  <h1>New Leave Request</h1>
+
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/leaves/new" class="leave-form">
+    <label>
+      Employee
+      <input type="text" name="employee" id="employee-input" list="employee-options"
+             placeholder="Start typing an employee name or code" autocomplete="off" required>
+      <datalist id="employee-options"></datalist>
+    </label>
+
+    <label>
+      Leave Type
+      <select name="pay_code" required>
+        {% for code, name in pay_codes.items() %}
+          <option value="{{ code }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      Start
+      <input type="datetime-local" name="start_time_local" id="start_time_local" required>
+    </label>
+
+    <label>
+      End
+      <input type="datetime-local" name="end_time_local" id="end_time_local" required>
+    </label>
+
+    <input type="hidden" name="start_time" id="start_time">
+    <input type="hidden" name="end_time" id="end_time">
+
+    <label>
+      Reason
+      <textarea name="apply_reason" rows="3"></textarea>
+    </label>
+
+    <button type="submit" class="btn">Submit Request</button>
+  </form>
+
+  <script>
+    const employeeInput = document.getElementById("employee-input");
+    const employeeOptions = document.getElementById("employee-options");
+    const employeeById = {};
+
+    async function loadEmployees(search) {
+      const resp = await fetch(`/api/employees?search=${encodeURIComponent(search)}&limit=50`);
+      if (!resp.ok) return;
+      const results = await resp.json();
+      employeeOptions.innerHTML = "";
+      results.forEach((emp) => {
+        const label = `${emp.emp_code} - ${emp.name}${emp.department ? " (" + emp.department + ")" : ""}`;
+        employeeById[label] = emp.id ?? emp.emp_code;
+        const opt = document.createElement("option");
+        opt.value = label;
+        employeeOptions.appendChild(opt);
+      });
+    }
+
+    let debounceTimer;
+    employeeInput.addEventListener("input", (e) => {
+      clearTimeout(debounceTimer);
+      const value = e.target.value;
+      debounceTimer = setTimeout(() => loadEmployees(value), 250);
+    });
+    loadEmployees("");
+
+    // Convert datetime-local inputs into BioTime's expected "YYYY-MM-DD HH:MM:SS" format,
+    // and resolve the typed employee label to its underlying id/emp_code before submit.
+    document.querySelector(".leave-form").addEventListener("submit", (e) => {
+      const toBioTimeFormat = (value) => value ? value.replace("T", " ") + ":00" : "";
+      document.getElementById("start_time").value = toBioTimeFormat(document.getElementById("start_time_local").value);
+      document.getElementById("end_time").value = toBioTimeFormat(document.getElementById("end_time_local").value);
+
+      const typed = employeeInput.value;
+      if (employeeById[typed] !== undefined) {
+        employeeInput.value = employeeById[typed];
+      }
+    });
+  </script>
+{% endblock %}
