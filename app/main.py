@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import logging
 
+from alembic import command
+from alembic.config import Config
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.biotime_client import BioTimeClientError, BioTimeServerError, get_biotime_client
+from app.biotime_client import (
+    BioTimeClientError,
+    BioTimeServerError,
+    close_biotime_client,
+    get_biotime_client,
+    is_biotime_configured,
+)
 from app.config import settings
+from app.connection import load_connection
 from app.database import SessionLocal
-from app.routers import employees, leaves
+from app.routers import employees, integrations, leaves, reports, setup
 from app.sync import sync_leaves
 
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +30,20 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(leaves.router)
 app.include_router(employees.router)
+app.include_router(integrations.router)
+app.include_router(reports.router)
+app.include_router(setup.router)
+
+
+@app.middleware("http")
+async def require_biotime_connection(request: Request, call_next):
+    """Until a BioTime connection is set up, send every page to /setup."""
+    path = request.url.path
+    if not is_biotime_configured() and not path.startswith(("/setup", "/static")):
+        if path.startswith("/api/"):
+            return JSONResponse(status_code=503, content={"detail": "BioTime connection is not set up yet. Open /setup."})
+        return RedirectResponse(url="/setup")
+    return await call_next(request)
 
 
 @app.exception_handler(BioTimeClientError)
@@ -37,6 +60,8 @@ scheduler: BackgroundScheduler | None = None
 
 
 def _scheduled_sync_job() -> None:
+    if not is_biotime_configured():
+        return
     db = SessionLocal()
     try:
         sync_leaves(db, get_biotime_client())
@@ -46,9 +71,22 @@ def _scheduled_sync_job() -> None:
         db.close()
 
 
+def _run_migrations() -> None:
+    """Create/upgrade the database tables, so a fresh install needs no manual step."""
+    config = Config("alembic.ini")
+    config.attributes["configure_logger"] = False
+    command.upgrade(config, "head")
+
+
 @app.on_event("startup")
 def startup() -> None:
     global scheduler
+    _run_migrations()
+    db = SessionLocal()
+    try:
+        load_connection(db)
+    finally:
+        db.close()
     if settings.sync_enabled:
         scheduler = BackgroundScheduler()
         scheduler.add_job(
@@ -65,4 +103,4 @@ def startup() -> None:
 def shutdown() -> None:
     if scheduler:
         scheduler.shutdown(wait=False)
-    get_biotime_client().close()
+    close_biotime_client()

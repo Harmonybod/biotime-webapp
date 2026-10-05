@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}API Integrations{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>API Integrations</h1>
+  </div>
+
+  <p class="intro-text">
+    These are the REST APIs a client's ERP or payroll system can pull data from. Each client is
+    given their own base URL and access credentials when they're onboarded — the paths below stay
+    the same for everyone.
+  </p>
+
+  <table class="leave-table">
+    <thead>
+      <tr>
+        <th>Report</th>
+        <th>Method</th>
+        <th>Path</th>
+        <th>Filters</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for api in available_apis %}
+        <tr>
+          <td>
+            <strong>{{ api.name }}</strong>
+            <div class="muted">{{ api.description }}</div>
+          </td>
+          <td><span class="method-tag method-{{ api.method|lower }}">{{ api.method }}</span></td>
+          <td><code>{{ api.path }}</code></td>
+          <td class="muted">{{ api.params }}</td>
+          <td><span class="status-tag status-available">Available</span></td>
+        </tr>
+      {% endfor %}
+      {% for api in planned_apis %}
+        <tr>
+          <td>
+            <strong>{{ api.name }}</strong>
+            <div class="muted">{{ api.description }}</div>
+          </td>
+          <td class="muted">—</td>
+          <td class="muted">Available on request</td>
+          <td class="muted">—</td>
+          <td><span class="status-tag status-planned">Available on request</span></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2 class="section-subheading">Example — Leave Report</h2>
+  <p class="intro-text">Request:</p>
+  <pre class="code-block">GET /api/leaves?department=HR&approval_status=2</pre>
+
+  <p class="intro-text">Response:</p>
+  <pre class="code-block">[
+  {
+    "id": 12,
+    "emp_code": "100001",
+    "employee_name": "Dejene Kebede Debele",
+    "department": "HR",
+    "pay_code_name": "Annual Leave",
+    "start_time": "2026-09-10T00:00:00",
+    "end_time": "2026-09-12T00:00:00",
+    "leave_day": 3,
+    "approval_status": 2,
+    "approval_status_display": "Approved",
+    "approver": "admin"
+  }
+]</pre>
+
+  <div class="flash flash-error" style="margin-top: 24px;">
+    <strong>Note for whoever sets up a new client:</strong> these endpoints currently have no
+    access key or login check in front of them — anyone who can reach this server can call them.
+    Before handing a URL to a real client, add per-client authentication (an API key is the
+    simplest option). Ask engineering if this hasn't been added yet.
+  </div>
+{% endblock %}

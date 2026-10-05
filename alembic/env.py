@@ -10,7 +10,8 @@ from app import models  # noqa: F401  (registers models on Base.metadata)
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-if config.config_file_name is not None:
+# The app runs migrations itself on startup and keeps its own logging setup.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata

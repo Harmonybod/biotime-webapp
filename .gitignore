@@ -5,3 +5,8 @@ __pycache__/
 *.env
 *.db
 *.log
+*.db-journal
+
+# Business documents kept next to the code, never pushed
+*.pdf
+*.docx

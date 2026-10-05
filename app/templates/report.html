@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}{{ report.title }}{% endblock %}
+
+{% macro hm(hours) -%}
+  {%- set total = (hours * 60)|round|int -%}
+  {{ total // 60 }}h {{ "%02d"|format(total % 60) }}m
+{%- endmacro %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>{{ report.title }}</h1>
+    <div class="report-tabs">
+      {% for key, r in reports_nav.items() %}
+        <a href="/reports/{{ key }}?start_date={{ filters.start_date }}&end_date={{ filters.end_date }}&emp_code={{ filters.emp_code }}"
+           class="{% if key == kind %}active{% endif %}">{{ r.nav }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+  <form method="get" action="/reports/{{ kind }}" class="filters">
+    <select name="emp_code" onchange="this.form.submit()">
+      <option value="">All employees</option>
+      {% for e in employees %}
+        <option value="{{ e.emp_code }}" {% if filters.emp_code == e.emp_code %}selected{% endif %}>
+          {{ e.emp_code }} - {{ e.name }}{% if e.department %} ({{ e.department }}){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <input type="date" name="start_date" value="{{ filters.start_date }}" required>
+    <input type="date" name="end_date" value="{{ filters.end_date }}" required>
+    <button type="submit" class="btn">Run Report</button>
+  </form>
+
+  <p class="intro-text">
+    Calculated from BioTime punches against the schedule
+    <strong>{{ schedule.start.strftime("%H:%M") }}–{{ schedule.end.strftime("%H:%M") }}</strong>
+    ({{ schedule.break_minutes }} min break, {{ hm(schedule.expected_hours) }} expected per workday{% if schedule.grace_minutes %}, {{ schedule.grace_minutes }} min late grace{% endif %}).
+    Punches are paired in order (in, out, in, out…). Approved leave from the last sync is not counted as absence.
+  </p>
+
+  {% if selected %}
+    {% set s = selected %}
+    <h2 class="section-subheading">{{ s.name }} <span class="muted">({{ s.emp_code }}{% if s.department %} · {{ s.department }}{% endif %})</span></h2>
+
+    <div class="stat-grid">
+      <div class="stat {% if kind == 'worked-hours' %}stat-focus{% endif %}">
+        <div class="stat-label">Worked</div>
+        <div class="stat-value">{{ hm(s.worked_hours) }}</div>
+        <div class="muted">of {{ hm(s.expected_hours) }} expected</div>
+      </div>
+      <div class="stat {% if kind == 'absence' %}stat-focus{% endif %}">
+        <div class="stat-label">Absent</div>
+        <div class="stat-value">{{ s.absent_days }} day{{ "" if s.absent_days == 1 else "s" }}</div>
+        <div class="muted">{{ hm(s.absent_hours) }} · {{ s.leave_days }} on leave</div>
+      </div>
+      <div class="stat {% if kind == 'late-arrivals' %}stat-focus{% endif %}">
+        <div class="stat-label">Late arrivals</div>
+        <div class="stat-value">{{ s.late_count }}</div>
+        <div class="muted">{{ hm(s.late_hours) }} total</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Days present</div>
+        <div class="stat-value">{{ s.present_days }}</div>
+        <div class="muted">{{ s.missing_punch_days }} with a missing punch</div>
+      </div>
+    </div>
+
+    {% if kind == "worked-hours" %}
+      {% set days = s.days|selectattr("status", "ne", "Off day")|list %}
+    {% elif kind == "absence" %}
+      {% set days = s.days|selectattr("status", "in", ["Absent", "On leave"])|list %}
+    {% else %}
+      {% set days = s.days|selectattr("late_minutes")|list %}
+    {% endif %}
+
+    <table class="leave-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Status</th>
+          {% if kind == "worked-hours" %}
+            <th>Punches</th><th>Worked</th><th>Expected</th>
+          {% elif kind == "absence" %}
+            <th>Absent hours</th>
+          {% else %}
+            <th>Scheduled start</th><th>First punch</th><th>Late by</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in days %}
+          <tr>
+            <td>{{ d.day.strftime("%a %d %b %Y") }}</td>
+            <td>
+              <span class="badge badge-{{ d.status|lower|replace(' ', '-') }}">{{ d.status }}</span>
+              {% if d.missing_punch %}<span class="badge badge-pending">Missing punch</span>{% endif %}
+            </td>
+            {% if kind == "worked-hours" %}
+              <td class="muted">
+                {% for p in d.punches %}{{ p.strftime("%H:%M") }}{% if not loop.last %}, {% endif %}{% else %}-{% endfor %}
+              </td>
+              <td>{{ hm(d.worked_hours) }}</td>
+              <td>{{ hm(d.expected_hours) }}</td>
+            {% elif kind == "absence" %}
+              <td>{{ hm(d.absent_hours) }}</td>
+            {% else %}
+              <td>{{ schedule.start.strftime("%H:%M") }}</td>
+              <td>{{ d.first_in.strftime("%H:%M:%S") }}</td>
+              <td>{{ hm(d.late_minutes / 60) }}</td>
+            {% endif %}
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="muted">
+            {% if kind == "absence" %}No absences in this period.
+            {% elif kind == "late-arrivals" %}No late arrivals in this period.
+            {% else %}No scheduled or worked days in this period.{% endif %}
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  {% elif results %}
+    <table class="leave-table">
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Department</th>
+          {% if kind == "worked-hours" %}
+            <th>Days present</th><th>Worked</th><th>Expected</th><th>Missing punches</th>
+          {% elif kind == "absence" %}
+            <th>Absent days</th><th>Absent hours</th><th>On leave</th><th>Expected</th>
+          {% else %}
+            <th>Late arrivals</th><th>Total late</th><th>Days present</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results %}
+          <tr>
+            <td>
+              <a href="/reports/{{ kind }}?emp_code={{ r.emp_code }}&start_date={{ filters.start_date }}&end_date={{ filters.end_date }}">{{ r.name or "-" }}</a>
+              <span class="muted">({{ r.emp_code }})</span>
+            </td>
+            <td>{{ r.department }}</td>
+            {% if kind == "worked-hours" %}
+              <td>{{ r.present_days }}</td>
+              <td>{{ hm(r.worked_hours) }}</td>
+              <td>{{ hm(r.expected_hours) }}</td>
+              <td>{{ r.missing_punch_days }}</td>
+            {% elif kind == "absence" %}
+              <td>{{ r.absent_days }}</td>
+              <td>{{ hm(r.absent_hours) }}</td>
+              <td>{{ r.leave_days }}</td>
+              <td>{{ hm(r.expected_hours) }}</td>
+            {% else %}
+              <td>{{ r.late_count }}</td>
+              <td>{{ hm(r.late_hours) }}</td>
+              <td>{{ r.present_days }}</td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

@@ -39,3 +39,19 @@ class LeaveRequest(Base):
         onupdate=expression.func.now(),
         nullable=False,
     )
+
+
+class BioTimeConnection(Base):
+    """The BioTime server this install talks to, entered on the /setup page.
+
+    Single row. Stored locally so each person's copy of the app points at
+    their own BioTime without editing any files.
+    """
+
+    __tablename__ = "biotime_connection"
+
+    id = Column(Integer, primary_key=True)
+    base_url = Column(String, nullable=False)
+    username = Column(String, nullable=False)
+    password = Column(String, nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

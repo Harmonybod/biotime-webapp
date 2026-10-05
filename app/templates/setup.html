@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}BioTime Connection{% endblock %}
+{% block content %}
+  <h1>BioTime Connection</h1>
+
+  <p class="intro-text">
+    {% if connected %}
+      This app is connected to the BioTime below. Change it here to point at a different BioTime server.
+    {% else %}
+      Connect this app to your BioTime. Use the same address you open BioTime with in your browser,
+      and a BioTime login that can use the API (an administrator account works).
+    {% endif %}
+  </p>
+
+  {% if message %}<div class="flash flash-ok">{{ message }}</div>{% endif %}
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/setup" class="leave-form">
+    <label>
+      BioTime address
+      <input type="text" name="base_url" value="{{ form.base_url }}"
+             placeholder="e.g. http://127.0.0.1:80 or http://192.168.1.20:8081" required>
+    </label>
+
+    <label>
+      Username
+      <input type="text" name="username" value="{{ form.username }}" autocomplete="username" required>
+    </label>
+
+    <label>
+      Password
+      <input type="password" name="password" autocomplete="current-password"
+             {% if has_saved_password %}placeholder="Leave blank to keep the saved password"{% else %}required{% endif %}>
+    </label>
+
+    <button type="submit" class="btn">{% if connected %}Test &amp; Save{% else %}Connect{% endif %}</button>
+  </form>
+{% endblock %}

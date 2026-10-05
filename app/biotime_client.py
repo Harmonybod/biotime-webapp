@@ -36,6 +36,10 @@ class BioTimeServerError(BioTimeError):
     """5xx: BioTime itself is failing."""
 
 
+class BioTimeNotConfigured(BioTimeClientError):
+    """No BioTime connection has been set up yet (see /setup)."""
+
+
 class BioTimeClient:
     def __init__(
         self,
@@ -198,6 +202,25 @@ class BioTimeClient:
                 break
             page = self._get_absolute(next_url)
 
+    # ------------------------------------------------------------------ #
+    # Transactions (raw punches)
+    # ------------------------------------------------------------------ #
+    def list_transactions(self, page: int = 1, page_size: int = 50, **filters) -> dict:
+        """Filters: emp_code, start_time / end_time ("YYYY-MM-DD HH:MM:SS")."""
+        params = {"page": page, "page_size": page_size, **filters}
+        resp = self._request("GET", "/iclock/api/transactions/", params=params)
+        return resp.json()
+
+    def iter_all_transactions(self, page_size: int = 200, **filters):
+        page = self.list_transactions(page=1, page_size=page_size, **filters)
+        while True:
+            for record in page.get("data", []):
+                yield record
+            next_url = page.get("next")
+            if not next_url:
+                break
+            page = self._get_absolute(next_url)
+
     def close(self) -> None:
         self._http.close()
 
@@ -205,9 +228,26 @@ class BioTimeClient:
 _client: Optional[BioTimeClient] = None
 
 
+def configure_biotime_client(base_url: str, username: str, password: str) -> None:
+    """Point the app at a BioTime server, replacing any previous connection."""
+    global _client
+    previous = _client
+    _client = BioTimeClient(base_url=base_url, username=username, password=password)
+    if previous:
+        previous.close()
+
+
+def is_biotime_configured() -> bool:
+    return _client is not None
+
+
 def get_biotime_client() -> BioTimeClient:
     """Process-wide singleton so the token cache is shared across requests."""
-    global _client
     if _client is None:
-        _client = BioTimeClient()
+        raise BioTimeNotConfigured("BioTime connection is not set up yet. Open /setup.", 503)
     return _client
+
+
+def close_biotime_client() -> None:
+    if _client:
+        _client.close()

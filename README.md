@@ -1,57 +1,222 @@
-# BioTime Leave Integration
+# BioTime Web App
 
-Internal FastAPI app that syncs leave requests with ZKBio Time v9.0.6 and lets
-staff submit new leave requests (approvals stay inside BioTime's own UI).
+A small web app that works alongside **ZKBio Time (BioTime) v9** and runs on your own Windows PC:
 
-## Setup
+- **Leave requests**: see leave requests synced from BioTime and submit new ones (approvals stay in BioTime).
+- **Attendance reports**: **Worked Hours**, **Absence** and **Late Arrivals**, calculated from the punches in BioTime, for all employees or one employee at a time.
+- **REST API**: the same data as JSON, for an ERP or payroll system (see the **API Integrations** page in the app).
 
-```bash
-python -m venv .venv
+Each person runs their own copy and connects it to their own BioTime. The app asks for the BioTime address and login the first time it opens.
+
+---
+
+## What you need
+
+- A **Windows 10 or 11** PC.
+- **ZKBio Time (BioTime) v9** installed and running, either on the same PC or on another PC on your network.
+- A **BioTime login**. An administrator account works.
+- An **internet connection for the first start**, to download Python and the app's packages.
+
+You don't have to install Python yourself. The start script installs it if it's missing.
+
+---
+
+## Installation
+
+### Step 1: Download the app
+
+**Option A: download a ZIP (no tools needed)**
+
+1. Open **https://github.com/Harmonybod/biotime-webapp**.
+2. Click the green **Code** button, then **Download ZIP**.
+3. Open your **Downloads** folder, right-click `biotime-webapp-master.zip` and choose **Extract All…**.
+4. Pick a permanent location, for example `C:\Users\<you>\Documents\biotime-webapp`, and click **Extract**.
+
+   Don't run the app from inside the ZIP, and don't leave it in a temporary folder.
+
+**Option B: with Git**
+
+```bat
+git clone https://github.com/Harmonybod/biotime-webapp.git
+```
+
+### Step 2: Start the app
+
+1. Open the extracted folder. Windows may put it inside a second folder with the same name; open the one that contains `start-server.bat` and the `app` folder.
+2. Double-click **`start-server.bat`**.
+3. If Windows shows **"Windows protected your PC"**, click **More info**, then **Run anyway**. Windows shows this for scripts downloaded from the internet.
+4. A black window opens. **The first start takes a few minutes**: it installs Python 3.12 if needed, then downloads the app's packages. You'll see progress in the window.
+5. When it's ready, your browser opens **http://127.0.0.1:8000** automatically.
+
+**Keep the black window open while you use the app.** Closing it stops the app.
+
+If the script stops with an error, see [Manual installation](#manual-installation-if-start-serverbat-fails) or [Troubleshooting](#troubleshooting).
+
+### Step 3: Connect to your BioTime
+
+On the first start, the app opens the **BioTime Connection** page:
+
+| Field | What to enter |
+|---|---|
+| **BioTime address** | The address you use to open BioTime in your browser. Examples: `http://127.0.0.1:80` (BioTime on this PC) or `http://192.168.1.20:8081` (BioTime on another PC). |
+| **Username / Password** | Your BioTime login. |
+
+Click **Connect**. The app tests the login and tells you what's wrong if it can't connect. Once connected:
+
+1. Go to **Leave Requests** and click **Sync from BioTime** to load existing leave requests.
+2. Open **Worked Hours**, **Absence** or **Late Arrivals**, pick an employee and a date range.
+
+To change the BioTime connection later, click **BioTime Connection** in the top-right corner.
+
+### Next time
+
+Double-click `start-server.bat` again. It skips the setup and starts in a few seconds.
+
+---
+
+## Manual installation (if `start-server.bat` fails)
+
+Use this if the script can't install Python or a package, for example because of a proxy, a firewall, or no `winget`.
+
+**1. Install Python 3.12**
+
+1. Download the **Windows installer (64-bit)** from https://www.python.org/downloads/release/python-31210/.
+2. Run it. **Tick "Add python.exe to PATH"** at the bottom of the first screen, then click **Install Now**.
+
+Use Python 3.12; 3.10 and 3.11 also work. The app is tested on 3.12, and newer versions (3.13+) may fail to install some of its packages.
+
+**2. Open a terminal in the app folder**
+
+Open the app folder in File Explorer, click the address bar, type `cmd` and press **Enter**. A Command Prompt opens in that folder.
+
+**3. Run these commands one at a time**
+
+```bat
+:: Needed on PCs with ZKBioTime installed (its installer breaks other Pythons); harmless otherwise
+set PYTHONHOME=
+set PYTHONPATH=
+
+:: Create the app's Python environment (use "python" instead of "py -3.12" if py isn't found)
+py -3.12 -m venv .venv
 .venv\Scripts\activate
+
+:: Install the packages
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+
+:: Create the settings file
+copy .env.example .env
+
+:: Start the app
+python -m uvicorn app.main:app --port 8000
 ```
 
-Copy `.env.example` to `.env` and fill in your BioTime credentials and
-Postgres connection string.
+Then open **http://127.0.0.1:8000** in your browser and continue with [Step 3](#step-3-connect-to-your-biotime).
 
-Create the database, then run migrations:
+If one package fails to install, run `pip install -r requirements.txt` again; downloads sometimes fail on a slow connection. If it keeps failing, install that package on its own (for example `pip install uvicorn[standard]==0.30.6`, using the version from `requirements.txt`) and read the error message it prints.
 
-```bash
-alembic upgrade head
+**To start it again later** (manual install), open `cmd` in the app folder and run:
+
+```bat
+set PYTHONHOME=
+.venv\Scripts\activate
+python -m uvicorn app.main:app --port 8000
 ```
 
-## Run
+---
 
-```bash
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| "Windows protected your PC" | Click **More info**, then **Run anyway**. Or right-click `start-server.bat` → **Properties** → tick **Unblock** → **OK**. |
+| "Python was installed but this window can't see it yet" | Close the window and double-click `start-server.bat` again. |
+| Python or packages fail to download | Check the internet connection (and proxy/firewall), then run `start-server.bat` again. If it still fails, use the [manual installation](#manual-installation-if-start-serverbat-fails). |
+| `SRE module mismatch` or `No module named 'encodings'` | ZKBioTime's `PYTHONHOME` setting is interfering. `start-server.bat` handles this. When running commands manually, run `set PYTHONHOME=` first. |
+| `error while attempting to bind on address ... 8000` | The app is already running in another window, or another program uses port 8000. Close the other window, or change `--port 8000` to `--port 8001` in `start-server.bat` and open http://127.0.0.1:8001. |
+| "Couldn't reach BioTime at …" | Check that the address opens BioTime in your browser, including the port. If BioTime is on another PC, that PC's firewall must allow the port. |
+| "BioTime rejected that username or password" | Use the same login you use on the BioTime website. |
+| Reports show no hours | Check the date range, and that BioTime has punches for it (in BioTime: **Attendance → Transactions**). |
+| Start completely fresh | Close the app, delete `biotime.db` in the app folder (cached data and saved connection) and the folder `%LOCALAPPDATA%\biotime-webapp`, then run `start-server.bat` again. |
+
+---
+
+## How the attendance reports are calculated
+
+The reports are calculated from BioTime's punch records (**Attendance → Transactions**), against the work schedule set in `.env` (default **08:00–17:00, Monday–Friday, 60-minute break = 8 hours a day**):
+
+- **Worked hours**: each day's punches are paired in time order (1st–2nd, 3rd–4th, …) and the durations are added up. A day with an odd number of punches is flagged **Missing punch**.
+- **Absence**: a scheduled workday with no punches and no approved leave. Absent hours = that day's expected hours. Approved leave comes from the last **Sync from BioTime**.
+- **Late arrivals**: the first punch of a workday after the shift start (plus an optional grace period).
+
+The schedule is the same for every employee, and shifts that cross midnight aren't supported.
+
+---
+
+## Settings (`.env`)
+
+`start-server.bat` creates `.env` from `.env.example`. Edit it in Notepad and restart the app to apply changes.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `SHIFT_START` / `SHIFT_END` | `08:00` / `17:00` | Scheduled working hours. |
+| `SHIFT_BREAK_MINUTES` | `60` | Unpaid break, subtracted from the expected hours. |
+| `SHIFT_WORK_DAYS` | `0,1,2,3,4` | Workdays: 0 = Monday … 6 = Sunday. |
+| `LATE_GRACE_MINUTES` | `0` | Minutes after shift start before an arrival counts as late. |
+| `SYNC_ENABLED` / `SYNC_INTERVAL_MINUTES` | `true` / `15` | Automatic leave sync from BioTime. |
+| `DATABASE_URL` | `sqlite:///./biotime.db` | Local database file. A `postgresql+pg8000://…` URL also works. |
+| `BIOTIME_BASE_URL` / `_USERNAME` / `_PASSWORD` | blank | Optional. Normally entered on the BioTime Connection page instead. |
+
+---
+
+## Security notes
+
+- The app only listens on **this PC** (`127.0.0.1`); other computers can't open it.
+- The `/api/...` endpoints have **no login** yet. Before giving an external system (ERP/payroll) access over the network, add authentication, such as per-client API keys.
+- The BioTime password is saved in `biotime.db` in the app folder. Don't share that file, or your `.env`.
+
+---
+
+## For developers
+
+| Layer | What we use |
+|---|---|
+| Backend | Python 3.12, [FastAPI](https://fastapi.tiangolo.com/) |
+| Frontend | Server-rendered Jinja2 templates (`app/templates/`), plain CSS (`app/static/style.css`), no JS framework |
+| Database | SQLite (`biotime.db`) via SQLAlchemy; PostgreSQL also works (`pg8000`) |
+| Migrations | Alembic (`alembic/`), applied automatically on startup |
+| App server | Uvicorn, started by `start-server.bat` (venv in `%LOCALAPPDATA%\biotime-webapp\venv`) |
+| Background jobs | APScheduler, in-process (periodic leave sync) |
+| Upstream | ZKBio Time v9 REST API via `httpx` (`app/biotime_client.py`) |
+
+Run with auto-reload while developing:
+
+```bat
 uvicorn app.main:app --reload --port 8000
 ```
 
-Open http://localhost:8000/leaves.
+### Layout
 
-## Layout
+- `app/main.py`: app wiring, startup (migrations, BioTime connection), redirect to `/setup` until connected, background sync job.
+- `app/biotime_client.py`: BioTime API client (auth, leaves, employees, transactions). `BIOTIME_AUTH_SCHEME` switches between `Token` and `JWT`.
+- `app/connection.py` and `app/routers/setup.py`: the BioTime Connection page; tests, saves and loads the connection.
+- `app/attendance.py`: worked-hours / absence / late calculations (pure functions).
+- `app/routers/reports.py`: report pages and the attendance JSON API.
+- `app/routers/leaves.py`, `app/sync.py`: leave pages, JSON API and the BioTime → local cache sync.
+- `app/routers/employees.py`: live employee search.
+- `app/routers/integrations.py`: the API Integrations page.
 
-- `app/biotime_client.py` — BioTime API client (auth, leaves, employees). Fully
-  decoupled from the web/DB layer; swap `BIOTIME_AUTH_SCHEME` between
-  `Token`/`JWT` via `.env` without touching callers.
-- `app/sync.py` — pulls all leaves from BioTime and upserts them into
-  `leave_requests`, matched on `biotime_id`.
-- `app/routers/leaves.py` — HTML pages (`/leaves`, `/leaves/new`) plus a JSON
-  API (`/api/leaves`, `/api/sync`).
-- `app/routers/employees.py` — live employee lookup for the request form
-  (`/api/employees?search=`).
-- `app/main.py` — FastAPI app wiring, BioTime error → HTTP status mapping, and
-  the APScheduler background sync job (`SYNC_INTERVAL_MINUTES`, disable with
-  `SYNC_ENABLED=false`).
-
-## Endpoints
+### Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/leaves` | List cached leave requests (filter by department/emp_code/status) |
-| GET | `/leaves/new` | New leave request form |
-| POST | `/leaves/new` | Submit a new leave request to BioTime |
-| POST | `/sync` | Trigger a manual sync from BioTime |
-| GET | `/api/leaves` | JSON list of cached leave requests |
-| POST | `/api/leaves` | JSON create (mirrors the form) |
-| POST | `/api/sync` | JSON sync trigger |
-| GET | `/api/employees` | Live employee search for the picker |
+| GET/POST | `/setup` | BioTime Connection page |
+| GET | `/leaves` | Leave requests (filter by department / emp_code / status) |
+| GET/POST | `/leaves/new` | New leave request form / submit to BioTime |
+| POST | `/sync` | Sync leaves from BioTime |
+| GET | `/reports/worked-hours`, `/reports/absence`, `/reports/late-arrivals` | Attendance report pages (`?emp_code=&start_date=&end_date=`) |
+| GET | `/api/reports/attendance` | Attendance report JSON (`start_date`, `end_date` required; `emp_code`, `page`, `page_size` optional) |
+| GET/POST | `/api/leaves` | Leave requests JSON / create |
+| POST | `/api/sync` | Sync trigger (JSON) |
+| GET | `/api/employees` | Employee search |
+| GET | `/integrations` | List of APIs available to client systems |
