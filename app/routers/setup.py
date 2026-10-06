@@ -4,15 +4,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.biotime_client import get_biotime_client, is_biotime_configured
 from app.connection import normalize_base_url, save_connection, saved_connection, test_connection
 from app.database import get_db
+from app.templating import templates
 
 router = APIRouter(tags=["setup"])
-templates = Jinja2Templates(directory="app/templates")
 
 
 def _current(db: Session) -> dict:

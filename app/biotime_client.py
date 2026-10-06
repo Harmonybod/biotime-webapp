@@ -221,6 +221,46 @@ class BioTimeClient:
                 break
             page = self._get_absolute(next_url)
 
+    # ------------------------------------------------------------------ #
+    # Manual logs (punches added by hand; once approved they appear in
+    # the transactions list like a device punch)
+    # ------------------------------------------------------------------ #
+    def iter_all_manual_logs(self, page_size: int = 200, **filters):
+        params = {"page": 1, "page_size": page_size, **filters}
+        page = self._request("GET", "/att/api/manuallogs/", params=params).json()
+        while True:
+            for record in page.get("data", []):
+                yield record
+            next_url = page.get("next")
+            if not next_url:
+                break
+            page = self._get_absolute(next_url)
+
+    def create_manual_log(
+        self, employee: int, emp_code: str, punch_time: str, punch_state: str, apply_reason: str = ""
+    ) -> Optional[dict]:
+        """Create a manual punch. BioTime's response omits the id, so the new
+        record is looked up afterwards; returns it, or None if it can't be matched."""
+        body = {
+            "employee": employee,
+            "punch_time": punch_time,
+            "punch_state": punch_state,
+            "apply_reason": apply_reason,
+        }
+        self._request("POST", "/att/api/manuallogs/", json=body)
+        matches = [
+            record
+            for record in self.iter_all_manual_logs(emp_code=emp_code)
+            if record.get("emp_code") == emp_code and record.get("punch_time") == punch_time
+        ]
+        return max(matches, key=lambda record: record.get("id") or 0) if matches else None
+
+    def approve_manual_log(self, log_id: int) -> None:
+        self._request("POST", f"/att/api/manuallogs/{log_id}/approve/", json={})
+
+    def delete_manual_log(self, log_id: int) -> None:
+        self._request("DELETE", f"/att/api/manuallogs/{log_id}/")
+
     def close(self) -> None:
         self._http.close()
 

@@ -9,6 +9,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app import __version__
+from app.api_keys import CLIENT_API_ROUTES, is_local
 from app.biotime_client import (
     BioTimeClientError,
     BioTimeServerError,
@@ -19,20 +21,29 @@ from app.biotime_client import (
 from app.config import settings
 from app.connection import load_connection
 from app.database import SessionLocal
-from app.routers import employees, integrations, leaves, reports, setup
+from app.routers import employees, integrations, leaves, punches, reports, setup
 from app.sync import sync_leaves
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BioTime Leave Integration")
+app = FastAPI(title="BioTime Web App", version=__version__)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
 app.include_router(leaves.router)
 app.include_router(employees.router)
 app.include_router(integrations.router)
 app.include_router(reports.router)
+app.include_router(punches.router)
 app.include_router(setup.router)
+
+
+@app.middleware("http")
+async def local_only_except_client_api(request: Request, call_next):
+    """Other computers may only call the client API; pages and internal endpoints stay on this PC."""
+    host = request.client.host if request.client else None
+    if not is_local(host) and (request.method, request.url.path.rstrip("/")) not in CLIENT_API_ROUTES:
+        return JSONResponse(status_code=403, content={"detail": "Only the client API is available from other computers."})
+    return await call_next(request)
 
 
 @app.middleware("http")

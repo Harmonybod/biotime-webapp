@@ -47,12 +47,19 @@ rem ---- 3. Settings file ----------------------------------------------------
 if not exist ".env" copy ".env.example" ".env" >nul
 
 rem ---- 4. Run ---------------------------------------------------------------
+rem Only this PC can connect, unless API_NETWORK_ACCESS=true in .env lets other
+rem computers call the client API (pages stay local-only inside the app).
+set "HOST=127.0.0.1"
+for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
+  if /i "%%A"=="API_NETWORK_ACCESS" if /i "%%B"=="true" set "HOST=0.0.0.0"
+)
+if "%HOST%"=="0.0.0.0" echo Network access for the client API is ON (API_NETWORK_ACCESS=true).
 echo.
 echo Starting on %APP_URL%  - your browser will open shortly.
 echo Close this window (or press Ctrl+C) to stop the server.
 echo.
 start "" /b powershell -NoProfile -Command "Start-Sleep -Seconds 4; Start-Process '%APP_URL%'"
-"%VENV_PY%" -m uvicorn app.main:app --port 8000
+"%VENV_PY%" -m uvicorn app.main:app --host %HOST% --port 8000
 pause
 exit /b 0
 

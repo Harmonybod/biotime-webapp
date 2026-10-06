@@ -4,24 +4,24 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.api_keys import require_api_key
 from app.biotime_client import BioTimeClient, BioTimeError, get_biotime_client
 from app.database import get_db
 from app.models import LeaveRequest
 from app.pay_codes import PAY_CODES
 from app.schemas import LeaveRequestCreate, LeaveRequestOut, SyncResult
 from app.sync import record_to_row_fields, sync_leaves
+from app.templating import templates
 
 router = APIRouter(tags=["leaves"])
-templates = Jinja2Templates(directory="app/templates")
 
 
 # ---------------------------------------------------------------------- #
 # JSON API
 # ---------------------------------------------------------------------- #
-@router.get("/api/leaves", response_model=list[LeaveRequestOut])
+@router.get("/api/leaves", response_model=list[LeaveRequestOut], dependencies=[Depends(require_api_key)])
 def api_list_leaves(
     department: Optional[str] = None,
     emp_code: Optional[str] = None,

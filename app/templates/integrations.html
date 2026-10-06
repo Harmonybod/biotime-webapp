@@ -6,74 +6,228 @@
   </div>
 
   <p class="intro-text">
-    These are the REST APIs a client's ERP or payroll system can pull data from. Each client is
-    given their own base URL and access credentials when they're onboarded — the paths below stay
-    the same for everyone.
+    Connect an ERP, payroll or HR system to the attendance data in this BioTime. Set it up in three steps:
+    choose how the system reaches this PC, create an API key for it, then call the endpoints below.
   </p>
 
+  {% if message %}<div class="flash flash-ok">{{ message }}</div>{% endif %}
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  <h2 class="section-subheading">1. Connection</h2>
+  <div class="panel">
+    <div class="panel-row">
+      <span class="panel-label">Network access</span>
+      {% if network_access %}
+        <span class="status-tag status-available">On</span>
+        <span class="muted">Systems on other computers in your network can call the API.</span>
+      {% else %}
+        <span class="status-tag status-planned">Off</span>
+        <span class="muted">Only systems running on this PC can call the API.</span>
+      {% endif %}
+    </div>
+    <div class="panel-row">
+      <span class="panel-label">Base URL</span>
+      <div>
+        {% if network_access %}
+          {% for url in network_urls %}<div><code>{{ url }}</code></div>{% else %}<div class="muted">No network address found.</div>{% endfor %}
+          <div class="muted">On this PC: <code>{{ local_url }}</code></div>
+        {% else %}
+          <code>{{ local_url }}</code>
+        {% endif %}
+      </div>
+    </div>
+    {% if not network_access %}
+      <details class="panel-help">
+        <summary>Let a system on another computer connect</summary>
+        <ol>
+          <li>Open the <code>.env</code> file in the app folder with Notepad.</li>
+          <li>Add the line <code>API_NETWORK_ACCESS=true</code> (or change <code>false</code> to <code>true</code>) and save.</li>
+          <li>Close the app's black window and double-click <code>start-server.bat</code> again.</li>
+          <li>If Windows Firewall asks, allow Python on <strong>Private networks</strong>.</li>
+        </ol>
+        <p class="muted">
+          Other computers can then reach only the endpoints below, and only with a valid API key.
+          This page and the rest of the app stay available on this PC only.
+        </p>
+      </details>
+    {% endif %}
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  <h2 class="section-subheading">2. API keys</h2>
+  <p class="intro-text">
+    Create one key per client system so each can be revoked on its own. Send the key in the
+    <code>X-API-Key</code> header of every request.
+  </p>
+
+  {% if new_key %}
+    <div class="flash flash-ok new-key">
+      <div><strong>Key created for "{{ new_key_name }}".</strong> Copy it now; it won't be shown again.</div>
+      <div class="new-key-row">
+        <code id="new-key">{{ new_key }}</code>
+        <button type="button" class="btn btn-small" onclick="navigator.clipboard.writeText(document.getElementById('new-key').textContent); this.textContent='Copied';">Copy</button>
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/integrations/keys" class="filters">
+    <input type="text" name="name" placeholder="Name, e.g. Payroll system" required>
+    <button type="submit" class="btn">Create API key</button>
+  </form>
+
   <table class="leave-table">
-    <thead>
-      <tr>
-        <th>Report</th>
-        <th>Method</th>
-        <th>Path</th>
-        <th>Filters</th>
-        <th>Status</th>
-      </tr>
-    </thead>
+    <thead><tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
     <tbody>
-      {% for api in available_apis %}
+      {% for k in keys %}
         <tr>
-          <td>
-            <strong>{{ api.name }}</strong>
-            <div class="muted">{{ api.description }}</div>
+          <td><strong>{{ k.name }}</strong></td>
+          <td><code>{{ k.key_prefix }}…</code></td>
+          <td>{{ k.created_at.strftime("%d %b %Y %H:%M") }}</td>
+          <td>{{ k.last_used_at.strftime("%d %b %Y %H:%M") if k.last_used_at else "Never" }}</td>
+          <td class="row-actions">
+            <form method="post" action="/integrations/keys/{{ k.id }}/revoke"
+                  onsubmit="return confirm('Revoke this key? Systems using it will stop working.');">
+              <button type="submit" class="btn btn-secondary btn-small">Revoke</button>
+            </form>
           </td>
-          <td><span class="method-tag method-{{ api.method|lower }}">{{ api.method }}</span></td>
-          <td><code>{{ api.path }}</code></td>
-          <td class="muted">{{ api.params }}</td>
-          <td><span class="status-tag status-available">Available</span></td>
         </tr>
-      {% endfor %}
-      {% for api in planned_apis %}
-        <tr>
-          <td>
-            <strong>{{ api.name }}</strong>
-            <div class="muted">{{ api.description }}</div>
-          </td>
-          <td class="muted">—</td>
-          <td class="muted">Available on request</td>
-          <td class="muted">—</td>
-          <td><span class="status-tag status-planned">Available on request</span></td>
-        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">No API keys yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 
-  <h2 class="section-subheading">Example — Leave Report</h2>
-  <p class="intro-text">Request:</p>
-  <pre class="code-block">GET /api/leaves?department=HR&approval_status=2</pre>
+  {# ------------------------------------------------------------------ #}
+  <h2 class="section-subheading">3. Endpoints</h2>
 
-  <p class="intro-text">Response:</p>
+  <table class="leave-table">
+    <thead><tr><th>Report</th><th>Method</th><th>Path</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Attendance</strong><div class="muted">Worked hours, absence and late arrivals per employee for a period.</div></td>
+        <td><span class="method-tag method-get">GET</span></td>
+        <td><code>/api/reports/attendance</code></td>
+      </tr>
+      <tr>
+        <td><strong>Leave requests</strong><div class="muted">Leave requests from BioTime (as of the last sync).</div></td>
+        <td><span class="method-tag method-get">GET</span></td>
+        <td><code>/api/leaves</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="section-subheading">Attendance: <code>GET /api/reports/attendance</code></h3>
+  <p class="intro-text">
+    Calculated from BioTime punches against the work schedule. Only completed days are counted: today is
+    included once it's over, and <code>calculated_through</code> in the response shows the last day counted.
+    Pick what you need with <code>metrics</code>; the groups <code>worked</code>, <code>absence</code> and
+    <code>late</code> can be combined, or mixed with single field names.
+  </p>
+
+  <table class="leave-table">
+    <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      {% for name, required, desc in attendance_params %}
+        <tr><td><code>{{ name }}</code></td><td>{{ required }}</td><td>{{ desc }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3 class="section-subheading">Metrics</h3>
+  <table class="leave-table">
+    <thead><tr><th>Group</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      {% for group, field, desc in attendance_metrics %}
+        <tr><td><code>{{ group }}</code></td><td><code>{{ field }}</code></td><td>{{ desc }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="intro-text" style="margin-top: 12px;">
+    Every row also has <code>emp_code</code>, <code>name</code> and <code>department</code>. Hours are decimal
+    (8.5 = 8h 30m). Day <code>status</code> is one of Present, Absent, On leave, Off day, Worked on off day.
+  </p>
+
+  <h3 class="section-subheading">Examples</h3>
+  <p class="intro-text">Worked hours only, for everyone, for a month:</p>
+  <pre class="code-block">GET {{ base_url }}/api/reports/attendance?start_date=2026-10-01&end_date=2026-10-31&metrics=worked
+X-API-Key: {{ example_key }}</pre>
+
+  <p class="intro-text">Absence and late arrivals for one department:</p>
+  <pre class="code-block">GET {{ base_url }}/api/reports/attendance?start_date=2026-10-01&end_date=2026-10-31&metrics=absence,late&department=HR
+X-API-Key: {{ example_key }}</pre>
+
+  <p class="intro-text">With curl:</p>
+  <pre class="code-block">curl -H "X-API-Key: {{ example_key }}" "{{ base_url }}/api/reports/attendance?start_date=2026-10-01&end_date=2026-10-31&metrics=worked,late"</pre>
+
+  <p class="intro-text">With PowerShell:</p>
+  <pre class="code-block">Invoke-RestMethod -Headers @{ "X-API-Key" = "{{ example_key }}" } -Uri "{{ base_url }}/api/reports/attendance?start_date=2026-10-01&end_date=2026-10-31&metrics=worked,late"</pre>
+
+  <p class="intro-text">Response, for <code>metrics=worked_hours,late_hours&amp;emp_code=1001&amp;include_days=true</code>:</p>
+  <pre class="code-block">{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "start_date": "2026-10-01",
+  "end_date": "2026-10-31",
+  "calculated_through": "2026-10-31",
+  "metrics": ["worked_hours", "late_hours"],
+  "data": [
+    {
+      "emp_code": "1001",
+      "name": "Employee Name",
+      "department": "Finance",
+      "worked_hours": 182.5,
+      "late_hours": 1.75,
+      "days": [
+        {
+          "date": "2026-10-01",
+          "status": "Present",
+          "punches": ["09:21:00", "18:00:00"],
+          "worked_hours": 8.65,
+          "expected_hours": 9.0,
+          "missing_punch": false,
+          "first_punch": "09:21:00",
+          "late_minutes": 21.0
+        }
+      ]
+    }
+  ]
+}</pre>
+
+  <h3 class="section-subheading">Leave requests: <code>GET /api/leaves</code></h3>
+  <table class="leave-table">
+    <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      {% for name, required, desc in leave_params %}
+        <tr><td><code>{{ name }}</code></td><td>{{ required }}</td><td>{{ desc }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <pre class="code-block" style="margin-top: 12px;">GET {{ base_url }}/api/leaves?approval_status=2
+X-API-Key: {{ example_key }}</pre>
   <pre class="code-block">[
   {
     "id": 12,
-    "emp_code": "100001",
-    "employee_name": "Dejene Kebede Debele",
-    "department": "HR",
+    "emp_code": "1001",
+    "employee_name": "Employee Name",
+    "department": "Finance",
     "pay_code_name": "Annual Leave",
-    "start_time": "2026-09-10T00:00:00",
-    "end_time": "2026-09-12T00:00:00",
-    "leave_day": 3,
+    "start_time": "2026-10-12T00:00:00",
+    "end_time": "2026-10-14T00:00:00",
     "approval_status": 2,
-    "approval_status_display": "Approved",
-    "approver": "admin"
+    "approval_status_display": "Approved"
   }
 ]</pre>
 
-  <div class="flash flash-error" style="margin-top: 24px;">
-    <strong>Note for whoever sets up a new client:</strong> these endpoints currently have no
-    access key or login check in front of them — anyone who can reach this server can call them.
-    Before handing a URL to a real client, add per-client authentication (an API key is the
-    simplest option). Ask engineering if this hasn't been added yet.
-  </div>
+  <h3 class="section-subheading">Errors</h3>
+  <p class="intro-text">Errors return JSON with a <code>detail</code> message.</p>
+  <table class="leave-table">
+    <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+    <tbody>
+      {% for code, desc in errors %}
+        <tr><td><code>{{ code }}</code></td><td>{{ desc }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 {% endblock %}

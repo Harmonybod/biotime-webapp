@@ -55,3 +55,19 @@ class BioTimeConnection(Base):
     username = Column(String, nullable=False)
     password = Column(String, nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ApiKey(Base):
+    """A key an external system (ERP, payroll) uses to call the client API.
+
+    Only a SHA-256 hash is stored; the key itself is shown once when created.
+    """
+
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    key_prefix = Column(String, nullable=False)
+    key_hash = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime, nullable=True)

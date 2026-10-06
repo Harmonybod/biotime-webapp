@@ -364,3 +364,50 @@ code {
   white-space: nowrap;
 }
 .topbar-settings:hover { color: var(--primary); border-color: var(--primary); }
+
+/* ---------- Manual punch ---------- */
+.punch-form { margin-bottom: 32px; }
+.form-row { display: flex; gap: 14px; }
+.form-row label { flex: 1; }
+.form-hint { margin-top: -10px; }
+.leave-form .checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 14px;
+  color: var(--text);
+}
+.btn-small { padding: 6px 12px; font-size: 13px; }
+.row-actions { display: flex; gap: 6px; white-space: nowrap; }
+.row-actions form { margin: 0; }
+.flash-info { background: var(--primary-soft); color: var(--primary-dark); border-color: #c7d2fe; }
+
+/* ---------- API integrations ---------- */
+h3.section-subheading { font-size: 14px; margin-top: 24px; }
+.panel {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: 6px 18px;
+}
+.panel-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 14px;
+  flex-wrap: wrap;
+}
+.panel-row:last-child { border-bottom: none; }
+.panel-label { width: 130px; font-weight: 700; color: var(--muted); font-size: 13px; padding-top: 3px; }
+.panel-help { padding: 12px 0; font-size: 14px; }
+.panel-help summary { cursor: pointer; font-weight: 600; color: var(--primary); }
+.panel-help ol { margin: 10px 0; padding-left: 20px; line-height: 1.8; }
+.new-key-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.new-key-row code { font-size: 14px; padding: 6px 10px; background: #fff; word-break: break-all; }
+
+.app-footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 0 24px; }

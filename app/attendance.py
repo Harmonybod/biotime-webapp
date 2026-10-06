@@ -13,7 +13,9 @@ Rules:
 - A scheduled workday with no punches and no approved leave is an absence;
   its absent hours are the full expected hours for that day.
 - Late = first punch of a scheduled workday after shift start + grace.
-- Days after today are ignored (they haven't happened yet).
+- Only completed days count: today is left out until it is over (an employee
+  who hasn't arrived yet isn't absent, and one still at work has no
+  check-out yet). Days after today are ignored too.
 - Shifts crossing midnight are not supported.
 """
 from __future__ import annotations
@@ -112,36 +114,76 @@ class EmployeeReport:
     def missing_punch_days(self) -> int:
         return sum(1 for d in self.days if d.missing_punch)
 
-    def to_dict(self, include_days: bool = False) -> dict:
-        data = {
-            "emp_code": self.emp_code,
-            "name": self.name,
-            "department": self.department,
+    def to_dict(self, metrics: Optional[list[str]] = None, include_days: bool = False) -> dict:
+        """metrics: field names from METRICS (default: all of them)."""
+        metrics = metrics or ALL_METRICS
+        values = {
             "worked_hours": self.worked_hours,
             "expected_work_hours": self.expected_hours,
+            "present_days": self.present_days,
+            "missing_punch_days": self.missing_punch_days,
             "absent_hours": self.absent_hours,
             "absent_days": self.absent_days,
+            "leave_days": self.leave_days,
             "late_hours": self.late_hours,
             "late_count": self.late_count,
-            "present_days": self.present_days,
-            "leave_days": self.leave_days,
-            "missing_punch_days": self.missing_punch_days,
         }
+        data = {"emp_code": self.emp_code, "name": self.name, "department": self.department}
+        data.update({m: values[m] for m in metrics})
+
         if include_days:
-            data["days"] = [
-                {
-                    "date": d.day.isoformat(),
-                    "status": d.status,
-                    "punches": [p.strftime("%H:%M:%S") for p in d.punches],
-                    "worked_hours": d.worked_hours,
-                    "expected_hours": d.expected_hours,
-                    "absent_hours": d.absent_hours,
-                    "late_minutes": d.late_minutes,
-                    "missing_punch": d.missing_punch,
-                }
-                for d in self.days
-            ]
+            groups = {METRIC_GROUP[m] for m in metrics}
+            data["days"] = [_day_dict(d, groups) for d in self.days]
         return data
+
+
+def _day_dict(d: DayResult, groups: set[str]) -> dict:
+    day = {"date": d.day.isoformat(), "status": d.status}
+    if "worked" in groups:
+        day["punches"] = [p.strftime("%H:%M:%S") for p in d.punches]
+        day["worked_hours"] = d.worked_hours
+        day["expected_hours"] = d.expected_hours
+        day["missing_punch"] = d.missing_punch
+    if "absence" in groups:
+        day["absent_hours"] = d.absent_hours
+    if "late" in groups:
+        day["first_punch"] = d.first_in.strftime("%H:%M:%S") if d.first_in else None
+        day["late_minutes"] = d.late_minutes
+    return day
+
+
+# Metrics an API client can ask for, by group. A client can pass group names
+# (worked, absence, late) or individual field names.
+METRICS = {
+    "worked": ["worked_hours", "expected_work_hours", "present_days", "missing_punch_days"],
+    "absence": ["absent_hours", "absent_days", "leave_days"],
+    "late": ["late_hours", "late_count"],
+}
+ALL_METRICS = [m for fields in METRICS.values() for m in fields]
+METRIC_GROUP = {m: group for group, fields in METRICS.items() for m in fields}
+
+
+def resolve_metrics(value: Optional[str]) -> list[str]:
+    """Turn "worked,late_count" into field names, in canonical order. Raises ValueError."""
+    if not value or not value.strip():
+        return ALL_METRICS
+    wanted: set[str] = set()
+    unknown = []
+    for item in (part.strip().lower() for part in value.split(",")):
+        if not item:
+            continue
+        if item in METRICS:
+            wanted.update(METRICS[item])
+        elif item in METRIC_GROUP:
+            wanted.add(item)
+        else:
+            unknown.append(item)
+    if unknown:
+        raise ValueError(
+            f"Unknown metrics: {', '.join(unknown)}. "
+            f"Use groups ({', '.join(METRICS)}) or fields ({', '.join(ALL_METRICS)})."
+        )
+    return [m for m in ALL_METRICS if m in wanted]
 
 
 def parse_punch_time(value: str) -> Optional[datetime]:
@@ -194,6 +236,11 @@ def build_day(
     return result
 
 
+def last_counted_day(today: Optional[date] = None, include_today: bool = False) -> date:
+    today = today or date.today()
+    return today if include_today else today - timedelta(days=1)
+
+
 def build_report(
     employees: Iterable[dict],
     transactions: Iterable[dict],
@@ -202,13 +249,16 @@ def build_report(
     end: date,
     schedule: Schedule,
     today: Optional[date] = None,
+    include_today: bool = False,
 ) -> list[EmployeeReport]:
     """employees: dicts with emp_code/name/department.
     transactions: raw BioTime transaction records.
     leaves: (emp_code, start_time, end_time) of approved leaves.
+    include_today: count today even though it isn't over (used for "late
+    today so far", where a check-in is already final).
     """
     today = today or date.today()
-    last_day = min(end, today)
+    last_day = min(end, last_counted_day(today, include_today))
 
     punches_by_emp: dict[str, dict[date, list[datetime]]] = {}
     for record in transactions:

@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # SQLite file next to the app by default; set a postgresql+pg8000:// URL to use Postgres instead.
     database_url: str = "sqlite:///./biotime.db"
 
+    # Let systems on other computers (an ERP, payroll) call the client API.
+    # start-server.bat reads this and listens on the network instead of only
+    # on this PC. Pages stay local-only either way; see app/api_keys.py.
+    api_network_access: bool = False
+
     sync_enabled: bool = True
     sync_interval_minutes: int = 15
 

@@ -3,8 +3,11 @@
 A small web app that works alongside **ZKBio Time (BioTime) v9** and runs on your own Windows PC:
 
 - **Leave requests**: see leave requests synced from BioTime and submit new ones (approvals stay in BioTime).
+- **Manual punches**: add a check-in/check-out for an employee who forgot to punch (saved in BioTime as a Manual Log, optionally approved right away).
 - **Attendance reports**: **Worked Hours**, **Absence** and **Late Arrivals**, calculated from the punches in BioTime, for all employees or one employee at a time.
-- **REST API**: the same data as JSON, for an ERP or payroll system (see the **API Integrations** page in the app).
+- **Client API**: worked hours, absence and late arrivals (and leave requests) as JSON for an ERP or payroll system, protected by API keys you create on the **API Integrations** page.
+
+Current version: **1.1.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
 Each person runs their own copy and connects it to their own BioTime. The app asks for the BioTime address and login the first time it opens.
 
@@ -143,11 +146,13 @@ python -m uvicorn app.main:app --port 8000
 
 ## How the attendance reports are calculated
 
-The reports are calculated from BioTime's punch records (**Attendance → Transactions**), against the work schedule set in `.env` (default **08:00–17:00, Monday–Friday, 60-minute break = 8 hours a day**):
+The reports are calculated from BioTime's punch records (**Attendance → Transactions**), against the work schedule set in `.env` (default **08:00–17:00, Monday–Friday, 60-minute break = 8 hours a day**). Set it to match the shift in BioTime (**Attendance → Shift** and **Timetable**), see [Settings](#settings-env).
 
 - **Worked hours**: each day's punches are paired in time order (1st–2nd, 3rd–4th, …) and the durations are added up. A day with an odd number of punches is flagged **Missing punch**.
 - **Absence**: a scheduled workday with no punches and no approved leave. Absent hours = that day's expected hours. Approved leave comes from the last **Sync from BioTime**.
 - **Late arrivals**: the first punch of a workday after the shift start (plus an optional grace period).
+
+- **Only completed days count.** Today is included once it's over: until then, employees may not have arrived or checked out yet, so they'd look absent or short of hours. Late arrivals that already happened today are shown separately at the bottom of the Late Arrivals page. The API's `calculated_through` field gives the last day counted.
 
 The schedule is the same for every employee, and shifts that cross midnight aren't supported.
 
@@ -163,16 +168,34 @@ The schedule is the same for every employee, and shifts that cross midnight aren
 | `SHIFT_BREAK_MINUTES` | `60` | Unpaid break, subtracted from the expected hours. |
 | `SHIFT_WORK_DAYS` | `0,1,2,3,4` | Workdays: 0 = Monday … 6 = Sunday. |
 | `LATE_GRACE_MINUTES` | `0` | Minutes after shift start before an arrival counts as late. |
+| `API_NETWORK_ACCESS` | `false` | `true` lets systems on other computers call the client API (see below). |
 | `SYNC_ENABLED` / `SYNC_INTERVAL_MINUTES` | `true` / `15` | Automatic leave sync from BioTime. |
 | `DATABASE_URL` | `sqlite:///./biotime.db` | Local database file. A `postgresql+pg8000://…` URL also works. |
 | `BIOTIME_BASE_URL` / `_USERNAME` / `_PASSWORD` | blank | Optional. Normally entered on the BioTime Connection page instead. |
 
 ---
 
+## Connecting an ERP or payroll system (client API)
+
+Everything is set up on the **API Integrations** page in the app, which also has the full API reference with examples.
+
+1. **Choose how the system connects.** A system running on the same PC works straight away (`http://127.0.0.1:8000`). For a system on another computer, set `API_NETWORK_ACCESS=true` in `.env`, restart `start-server.bat`, and allow Python on **Private networks** if Windows Firewall asks. The page then shows this PC's network address to use as the base URL.
+2. **Create an API key** for the system on the page. Copy it straight away; it's only shown once. Create one key per system so each can be revoked separately.
+3. **Call the API** with the key in the `X-API-Key` header, for example:
+
+   ```
+   GET http://<base-url>/api/reports/attendance?start_date=2026-10-01&end_date=2026-10-31&metrics=worked,late
+   X-API-Key: btk_...
+   ```
+
+   `metrics` picks what's returned: `worked`, `absence`, `late`, any combination, or single field names.
+
+---
+
 ## Security notes
 
-- The app only listens on **this PC** (`127.0.0.1`); other computers can't open it.
-- The `/api/...` endpoints have **no login** yet. Before giving an external system (ERP/payroll) access over the network, add authentication, such as per-client API keys.
+- By default the app only listens on **this PC**. With `API_NETWORK_ACCESS=true`, other computers can reach **only** the client API (`/api/reports/attendance`, `/api/leaves`), and only with a valid API key. All pages, including manual punches and settings, stay available on this PC only.
+- API keys are stored as hashes; revoke a key on the API Integrations page to cut off that system.
 - The BioTime password is saved in `biotime.db` in the app folder. Don't share that file, or your `.env`.
 
 ---
@@ -201,10 +224,12 @@ uvicorn app.main:app --reload --port 8000
 - `app/biotime_client.py`: BioTime API client (auth, leaves, employees, transactions). `BIOTIME_AUTH_SCHEME` switches between `Token` and `JWT`.
 - `app/connection.py` and `app/routers/setup.py`: the BioTime Connection page; tests, saves and loads the connection.
 - `app/attendance.py`: worked-hours / absence / late calculations (pure functions).
+- `app/routers/punches.py`: the Manual Punch page (BioTime `/att/api/manuallogs/`).
 - `app/routers/reports.py`: report pages and the attendance JSON API.
 - `app/routers/leaves.py`, `app/sync.py`: leave pages, JSON API and the BioTime → local cache sync.
 - `app/routers/employees.py`: live employee search.
-- `app/routers/integrations.py`: the API Integrations page.
+- `app/routers/integrations.py`: the API Integrations page (connection details, API keys, API reference).
+- `app/api_keys.py`: API key creation/checking and the rule that other computers may only reach the client API.
 
 ### Endpoints
 
@@ -214,9 +239,12 @@ uvicorn app.main:app --reload --port 8000
 | GET | `/leaves` | Leave requests (filter by department / emp_code / status) |
 | GET/POST | `/leaves/new` | New leave request form / submit to BioTime |
 | POST | `/sync` | Sync leaves from BioTime |
+| GET/POST | `/punches` | Manual punches: list / add (check-in and/or check-out, optional auto-approve) |
+| POST | `/punches/{id}/approve`, `/punches/{id}/delete` | Approve or delete a manual punch in BioTime |
 | GET | `/reports/worked-hours`, `/reports/absence`, `/reports/late-arrivals` | Attendance report pages (`?emp_code=&start_date=&end_date=`) |
-| GET | `/api/reports/attendance` | Attendance report JSON (`start_date`, `end_date` required; `emp_code`, `page`, `page_size` optional) |
-| GET/POST | `/api/leaves` | Leave requests JSON / create |
-| POST | `/api/sync` | Sync trigger (JSON) |
-| GET | `/api/employees` | Employee search |
-| GET | `/integrations` | List of APIs available to client systems |
+| GET/POST | `/integrations`, `/integrations/keys`, `/integrations/keys/{id}/revoke` | API Integrations page: connection details, API keys, API reference |
+| GET | `/api/reports/attendance` | **Client API, needs `X-API-Key`.** Attendance report JSON. Required: `start_date`, `end_date`. Optional: `metrics` (any of `worked`, `absence`, `late`, or field names; default all), `emp_code`, `department`, `include_days`, `page`, `page_size`. Full docs on the `/integrations` page. |
+| GET | `/api/leaves` | **Client API, needs `X-API-Key`.** Leave requests JSON |
+| POST | `/api/leaves` | Create a leave request (this PC only) |
+| POST | `/api/sync` | Sync trigger (this PC only) |
+| GET | `/api/employees` | Employee search for the pages (this PC only) |

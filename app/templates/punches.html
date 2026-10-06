@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Manual Punch{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Manual Punch</h1>
+  </div>
+
+  <p class="intro-text">
+    Add a check-in and/or check-out for an employee who forgot to punch. These are saved in BioTime as
+    Manual Logs; once approved they count as normal punches in BioTime and in the Worked Hours,
+    Absence and Late Arrivals reports.
+  </p>
+
+  {% if message %}<div class="flash flash-ok">{{ message }}</div>{% endif %}
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/punches" class="leave-form punch-form">
+    <label>
+      Employee
+      <select name="emp_code" required>
+        <option value="">Select an employee</option>
+        {% for e in employees %}
+          <option value="{{ e.emp_code }}" {% if filters.emp_code == e.emp_code %}selected{% endif %}>
+            {{ e.emp_code }} - {{ e.name }}{% if e.department %} ({{ e.department }}){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      Date
+      <input type="date" name="punch_date" value="{{ today }}" max="{{ today }}" required>
+    </label>
+
+    <div class="form-row">
+      <label>
+        Check in
+        <input type="time" name="check_in">
+      </label>
+      <label>
+        Check out
+        <input type="time" name="check_out">
+      </label>
+    </div>
+    <div class="muted form-hint">Fill in one or both.</div>
+
+    <label>
+      Reason
+      <textarea name="apply_reason" rows="2" placeholder="e.g. Forgot to punch, device was offline"></textarea>
+    </label>
+
+    <label class="checkbox-label">
+      <input type="checkbox" name="approve" value="true" checked>
+      Approve immediately
+    </label>
+
+    <button type="submit" class="btn">Add Punch</button>
+  </form>
+
+  <h2 class="section-subheading">Manual punches</h2>
+
+  <form method="get" action="/punches" class="filters">
+    <select name="emp_code" onchange="this.form.submit()">
+      <option value="">All employees</option>
+      {% for e in employees %}
+        <option value="{{ e.emp_code }}" {% if filters.emp_code == e.emp_code %}selected{% endif %}>
+          {{ e.emp_code }} - {{ e.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <table class="leave-table">
+    <thead>
+      <tr>
+        <th>Employee</th>
+        <th>Punch time</th>
+        <th>Type</th>
+        <th>Reason</th>
+        <th>Status</th>
+        <th>Approver</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+        <tr>
+          <td>
+            {{ ((log.first_name or "") ~ " " ~ (log.last_name or ""))|trim }}
+            <span class="muted">({{ log.emp_code }})</span>
+          </td>
+          <td>{{ log.punch_time }}</td>
+          <td>{{ log.punch_state_display }}</td>
+          <td>{{ log.apply_reason or "-" }}</td>
+          <td>
+            <span class="badge badge-{{ (log.approval_status_display or '')|lower }}">
+              {{ log.approval_status_display }}
+            </span>
+          </td>
+          <td>{{ log.approver or "-" }}</td>
+          <td class="row-actions">
+            {% if log.approval_status != 2 %}
+              <form method="post" action="/punches/{{ log.id }}/approve">
+                <button type="submit" class="btn btn-small">Approve</button>
+              </form>
+            {% endif %}
+            <form method="post" action="/punches/{{ log.id }}/delete"
+                  onsubmit="return confirm('Delete this punch from BioTime?');">
+              <button type="submit" class="btn btn-secondary btn-small">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">No manual punches yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if total_logs > logs|length %}
+    <p class="muted">Showing the latest {{ logs|length }} of {{ total_logs }}. Pick an employee to see theirs.</p>
+  {% endif %}
+{% endblock %}

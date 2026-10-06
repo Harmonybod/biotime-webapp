@@ -40,6 +40,14 @@
     Punches are paired in order (in, out, in, out…). Approved leave from the last sync is not counted as absence.
   </p>
 
+  {% if today_excluded %}
+    <div class="flash flash-info">
+      Today ({{ today.strftime("%d %b %Y") }}) isn't included until the day is over: employees may not have
+      arrived or checked out yet. Figures run up to yesterday.{% if kind == "late-arrivals" %} Late arrivals
+      so far today are listed at the bottom.{% endif %}
+    </div>
+  {% endif %}
+
   {% if selected %}
     {% set s = selected %}
     <h2 class="section-subheading">{{ s.name }} <span class="muted">({{ s.emp_code }}{% if s.department %} · {{ s.department }}{% endif %})</span></h2>
@@ -160,6 +168,26 @@
               <td>{{ r.present_days }}</td>
             {% endif %}
           </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if kind == "late-arrivals" and today_excluded %}
+    <h2 class="section-subheading">Late today so far ({{ today.strftime("%d %b %Y") }})</h2>
+    <table class="leave-table">
+      <thead><tr><th>Employee</th><th>Department</th><th>Scheduled start</th><th>First punch</th><th>Late by</th></tr></thead>
+      <tbody>
+        {% for r, d in late_today %}
+          <tr>
+            <td>{{ r.name or "-" }} <span class="muted">({{ r.emp_code }})</span></td>
+            <td>{{ r.department }}</td>
+            <td>{{ schedule.start.strftime("%H:%M") }}</td>
+            <td>{{ d.first_in.strftime("%H:%M:%S") }}</td>
+            <td>{{ hm(d.late_minutes / 60) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="muted">No late arrivals so far today.</td></tr>
         {% endfor %}
       </tbody>
     </table>

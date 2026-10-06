@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}BioTime Leave{% endblock %}</title>
+  <title>{% block title %}BioTime Web App{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -11,10 +11,11 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/leaves">BioTime Leave</a>
+    <a class="brand" href="/leaves">BioTime Web App</a>
     <nav>
       <a href="/leaves">Leave Requests</a>
       <a href="/leaves/new">New Request</a>
+      <a href="/punches">Manual Punch</a>
       <a href="/reports/worked-hours">Worked Hours</a>
       <a href="/reports/absence">Absence</a>
       <a href="/reports/late-arrivals">Late Arrivals</a>
@@ -25,5 +26,6 @@
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+  <footer class="app-footer">BioTime Web App v{{ app_version }}</footer>
 </body>
 </html>
