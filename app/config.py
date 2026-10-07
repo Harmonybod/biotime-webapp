@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # on this PC. Pages stay local-only either way; see app/api_keys.py.
     api_network_access: bool = False
 
+    # Extra leave types for the New Leave Request form, as "id:Name, id:Name"
+    # (BioTime pay code ids). Types already used in synced leaves are found
+    # automatically; see app/pay_codes.py.
+    leave_types: str = ""
+
     sync_enabled: bool = True
     sync_interval_minutes: int = 15
 

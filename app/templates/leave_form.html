@@ -4,6 +4,14 @@
   <h1>New Leave Request</h1>
 
   {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+  {% if not pay_codes %}
+    <div class="flash flash-info">
+      No leave types are known yet. BioTime doesn't list them over its API, so the app learns them from
+      existing leave requests: add one leave of each type in BioTime, then click <strong>Sync from BioTime</strong>
+      on the Leave Requests page. You can also list them in <code>.env</code> as
+      <code>LEAVE_TYPES=id:Name, id:Name</code>.
+    </div>
+  {% endif %}
 
   <form method="post" action="/leaves/new" class="leave-form">
     <label>

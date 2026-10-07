@@ -10,7 +10,7 @@ from app.api_keys import require_api_key
 from app.biotime_client import BioTimeClient, BioTimeError, get_biotime_client
 from app.database import get_db
 from app.models import LeaveRequest
-from app.pay_codes import PAY_CODES
+from app.pay_codes import leave_types
 from app.schemas import LeaveRequestCreate, LeaveRequestOut, SyncResult
 from app.sync import record_to_row_fields, sync_leaves
 from app.templating import templates
@@ -122,10 +122,10 @@ def sync_action(db: Session = Depends(get_db), client: BioTimeClient = Depends(g
 
 
 @router.get("/leaves/new")
-def new_leave_form(request: Request, error: Optional[str] = None):
+def new_leave_form(request: Request, error: Optional[str] = None, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         "leave_form.html",
-        {"request": request, "pay_codes": PAY_CODES, "error": error},
+        {"request": request, "pay_codes": leave_types(db), "error": error},
     )
 
 
@@ -151,7 +151,7 @@ def submit_leave(
     except BioTimeError as exc:
         return templates.TemplateResponse(
             "leave_form.html",
-            {"request": request, "pay_codes": PAY_CODES, "error": exc.message},
+            {"request": request, "pay_codes": leave_types(db), "error": exc.message},
             status_code=400,
         )
 

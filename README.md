@@ -7,17 +7,18 @@ A small web app that works alongside **ZKBio Time (BioTime) v9** and runs on you
 - **Attendance reports**: **Worked Hours**, **Absence** and **Late Arrivals**, calculated from the punches in BioTime, for all employees or one employee at a time.
 - **Client API**: worked hours, absence and late arrivals (and leave requests) as JSON for an ERP or payroll system, protected by API keys you create on the **API Integrations** page.
 
-Current version: **1.1.0** (see [CHANGELOG.md](CHANGELOG.md)).
+Current version: **1.1.1** (see [CHANGELOG.md](CHANGELOG.md)).
 
-Each person runs their own copy and connects it to their own BioTime. The app asks for the BioTime address and login the first time it opens.
+The app works with **your own BioTime server**: nothing is pre-configured. Each installation asks for its BioTime address and login the first time it opens, and only talks to that server.
 
 ---
 
 ## What you need
 
-- A **Windows 10 or 11** PC.
-- **ZKBio Time (BioTime) v9** installed and running, either on the same PC or on another PC on your network.
-- A **BioTime login**. An administrator account works.
+- A **Windows 10 or 11** PC to run the app.
+- Your **ZKBio Time (BioTime) server**, version 9 (tested on 9.0), installed and running, either on the same PC or on another computer the app's PC can reach on the network.
+- The **address of your BioTime server**: the address you type in the browser to open BioTime, including the port, for example `http://<server-ip>:<port>`.
+- A **BioTime user account** the app can log in with. An administrator account works; a restricted account needs access to employees, transactions, leaves and manual logs.
 - An **internet connection for the first start**, to download Python and the app's packages.
 
 You don't have to install Python yourself. The start script installs it if it's missing.
@@ -30,7 +31,7 @@ You don't have to install Python yourself. The start script installs it if it's 
 
 **Option A: download a ZIP (no tools needed)**
 
-1. Open **https://github.com/Harmonybod/biotime-webapp**.
+1. Open this project's GitHub page, **https://github.com/Harmonybod/biotime-webapp**. This is only where the app is downloaded from; it doesn't connect to anyone else's BioTime.
 2. Click the green **Code** button, then **Download ZIP**.
 3. Open your **Downloads** folder, right-click `biotime-webapp-master.zip` and choose **Extract All…**.
 4. Pick a permanent location, for example `C:\Users\<you>\Documents\biotime-webapp`, and click **Extract**.
@@ -61,8 +62,10 @@ On the first start, the app opens the **BioTime Connection** page:
 
 | Field | What to enter |
 |---|---|
-| **BioTime address** | The address you use to open BioTime in your browser. Examples: `http://127.0.0.1:80` (BioTime on this PC) or `http://192.168.1.20:8081` (BioTime on another PC). |
-| **Username / Password** | Your BioTime login. |
+| **BioTime address** | Your BioTime server's address, exactly as in the browser's address bar when you open BioTime, for example `http://<server-ip>:<port>`. If BioTime runs on the same PC as the app, `http://localhost:<port>` also works. |
+| **Username / Password** | Your BioTime user account. |
+
+Not sure of the address? Open BioTime in your browser and copy everything before the first `/` after the port (for example from `http://<server-ip>:<port>/base/dashboard/`, copy `http://<server-ip>:<port>`).
 
 Click **Connect**. The app tests the login and tells you what's wrong if it can't connect. Once connected:
 
@@ -70,6 +73,17 @@ Click **Connect**. The app tests the login and tells you what's wrong if it can'
 2. Open **Worked Hours**, **Absence** or **Late Arrivals**, pick an employee and a date range.
 
 To change the BioTime connection later, click **BioTime Connection** in the top-right corner.
+
+### Step 4: Match the app to your BioTime
+
+A few settings can't be read from BioTime automatically. Check them once:
+
+| What | Why | How |
+|---|---|---|
+| **Work schedule** | Worked hours, absence and late arrivals are calculated against it. | In BioTime, look up your shift under **Attendance → Timetable** (start, end, break) and **Shift** (which weekdays). Copy them into `.env` as `SHIFT_START`, `SHIFT_END`, `SHIFT_BREAK_MINUTES` and `SHIFT_WORK_DAYS` (see [Settings](#settings-env)), then restart the app. |
+| **Leave types** | The New Leave Request form needs your BioTime's leave types. | Click **Sync from BioTime** on the Leave Requests page: types used in existing leave requests are added automatically. For types never used yet, add one leave of that type in BioTime and sync again, or list them in `.env` as `LEAVE_TYPES=id:Name, id:Name`. |
+| **Approved leave** | Approved leave isn't counted as absence. | Leaves sync every 15 minutes automatically; click **Sync from BioTime** to update straight away. |
+| **Punches** | Reports only see punches that reached BioTime. | Make sure your devices upload to BioTime (**Attendance → Transactions** should show recent punches). |
 
 ### Next time
 
@@ -139,6 +153,8 @@ python -m uvicorn app.main:app --port 8000
 | `error while attempting to bind on address ... 8000` | The app is already running in another window, or another program uses port 8000. Close the other window, or change `--port 8000` to `--port 8001` in `start-server.bat` and open http://127.0.0.1:8001. |
 | "Couldn't reach BioTime at …" | Check that the address opens BioTime in your browser, including the port. If BioTime is on another PC, that PC's firewall must allow the port. |
 | "BioTime rejected that username or password" | Use the same login you use on the BioTime website. |
+| New Leave Request has no leave types | See **Leave types** in [Step 4](#step-4-match-the-app-to-your-biotime). |
+| Hours, absences or late arrivals look wrong | Check the work schedule in `.env` matches your BioTime shift ([Step 4](#step-4-match-the-app-to-your-biotime)) and restart the app. |
 | Reports show no hours | Check the date range, and that BioTime has punches for it (in BioTime: **Attendance → Transactions**). |
 | Start completely fresh | Close the app, delete `biotime.db` in the app folder (cached data and saved connection) and the folder `%LOCALAPPDATA%\biotime-webapp`, then run `start-server.bat` again. |
 
@@ -169,6 +185,7 @@ The schedule is the same for every employee, and shifts that cross midnight aren
 | `SHIFT_WORK_DAYS` | `0,1,2,3,4` | Workdays: 0 = Monday … 6 = Sunday. |
 | `LATE_GRACE_MINUTES` | `0` | Minutes after shift start before an arrival counts as late. |
 | `API_NETWORK_ACCESS` | `false` | `true` lets systems on other computers call the client API (see below). |
+| `LEAVE_TYPES` | blank | Extra leave types as `id:Name, id:Name` (BioTime pay code ids). Types in synced leaves are found automatically. |
 | `SYNC_ENABLED` / `SYNC_INTERVAL_MINUTES` | `true` / `15` | Automatic leave sync from BioTime. |
 | `DATABASE_URL` | `sqlite:///./biotime.db` | Local database file. A `postgresql+pg8000://…` URL also works. |
 | `BIOTIME_BASE_URL` / `_USERNAME` / `_PASSWORD` | blank | Optional. Normally entered on the BioTime Connection page instead. |

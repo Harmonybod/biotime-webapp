@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 — 2026-10-07
+
+- README and setup page are now general: no example addresses that match a specific BioTime server,
+  plus a clear explanation of how to find your own BioTime address.
+- New "Step 4: Match the app to your BioTime" checklist (work schedule, leave types, approved
+  leave, punches).
+- Leave types are no longer hard-coded to one server: they're learned from leaves synced from
+  BioTime, with an optional `LEAVE_TYPES` setting, and the form explains what to do when none are known.
+
 ## 1.1.0 — 2026-10-07
 
 - **Client API ready for clients**: per-system API keys (created, listed and revoked on the API
