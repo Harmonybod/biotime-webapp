@@ -1,60 +1,51 @@
 """Worked hours / absence / late-arrival calculations from raw BioTime punches.
 
-BioTime's own attendance reports stay empty unless shifts are scheduled and
-its attendance calculation has run, and shift assignments aren't exposed over
-the REST API. So these reports are computed here from the raw transactions,
-against the single work schedule configured in settings.
+BioTime's own attendance reports stay empty unless its attendance
+calculation has run, so these reports are computed here from the raw
+transactions, against each employee's schedule for each day (synced from
+BioTime; see app/shifts.py).
 
 Rules:
 - Punches are grouped by calendar day and paired in time order
   (1st-2nd, 3rd-4th, ...). Devices often record every punch as "Check In",
   so punch_state is ignored. An odd punch count leaves the last punch
   unpaired and the day is flagged as having a missing punch.
-- A scheduled workday with no punches and no approved leave is an absence;
-  its absent hours are the full expected hours for that day.
+- A scheduled workday with no punches, no approved leave and no holiday is an
+  absence; its absent hours are the full expected hours for that day.
 - Late = first punch of a scheduled workday after shift start + grace.
+- Employees with no schedule that day are "Not scheduled": worked hours still
+  count, but there are no expected hours, absences or late arrivals.
 - Only completed days count: today is left out until it is over (an employee
   who hasn't arrived yet isn't absent, and one still at work has no
   check-out yet). Days after today are ignored too.
-- Shifts crossing midnight are not supported.
+- Shifts crossing midnight count their expected hours, but punches are still
+  grouped per calendar day.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
-from app.config import settings
+from app.shifts import DaySchedule
 
-
-@dataclass(frozen=True)
-class Schedule:
-    start: time
-    end: time
-    break_minutes: int
-    work_days: frozenset[int]
-    grace_minutes: int
-
-    @property
-    def expected_hours(self) -> float:
-        span = datetime.combine(date.min, self.end) - datetime.combine(date.min, self.start)
-        return max(span.total_seconds() / 3600 - self.break_minutes / 60, 0.0)
-
-    @classmethod
-    def from_settings(cls) -> "Schedule":
-        return cls(
-            start=time.fromisoformat(settings.shift_start),
-            end=time.fromisoformat(settings.shift_end),
-            break_minutes=settings.shift_break_minutes,
-            work_days=frozenset(int(d) for d in settings.shift_work_days.split(",") if d.strip()),
-            grace_minutes=settings.late_grace_minutes,
-        )
+# Day statuses
+PRESENT, ABSENT, ON_LEAVE = "Present", "Absent", "On leave"
+OFF_DAY, WORKED_OFF_DAY = "Off day", "Worked on off day"
+HOLIDAY, WORKED_HOLIDAY = "Holiday", "Worked on holiday"
+NOT_SCHEDULED, WORKED_NOT_SCHEDULED = "Not scheduled", "Worked (not scheduled)"
+DAY_STATUSES = [PRESENT, ABSENT, ON_LEAVE, OFF_DAY, WORKED_OFF_DAY, HOLIDAY, WORKED_HOLIDAY,
+                NOT_SCHEDULED, WORKED_NOT_SCHEDULED]
+# Days with nothing to show on the Worked Hours page.
+IDLE_STATUSES = [OFF_DAY, HOLIDAY, NOT_SCHEDULED]
 
 
 @dataclass
 class DayResult:
     day: date
-    status: str  # Present, Absent, On leave, Off day, Worked on off day
+    status: str  # one of DAY_STATUSES
+    shift_name: Optional[str] = None
+    scheduled_start: Optional[time] = None
     punches: list[datetime] = field(default_factory=list)
     worked_hours: float = 0.0
     expected_hours: float = 0.0
@@ -114,6 +105,10 @@ class EmployeeReport:
     def missing_punch_days(self) -> int:
         return sum(1 for d in self.days if d.missing_punch)
 
+    @property
+    def shift_names(self) -> list[str]:
+        return sorted({d.shift_name for d in self.days if d.shift_name})
+
     def to_dict(self, metrics: Optional[list[str]] = None, include_days: bool = False) -> dict:
         """metrics: field names from METRICS (default: all of them)."""
         metrics = metrics or ALL_METRICS
@@ -138,7 +133,7 @@ class EmployeeReport:
 
 
 def _day_dict(d: DayResult, groups: set[str]) -> dict:
-    day = {"date": d.day.isoformat(), "status": d.status}
+    day = {"date": d.day.isoformat(), "status": d.status, "shift": d.shift_name}
     if "worked" in groups:
         day["punches"] = [p.strftime("%H:%M:%S") for p in d.punches]
         day["worked_hours"] = d.worked_hours
@@ -147,6 +142,7 @@ def _day_dict(d: DayResult, groups: set[str]) -> dict:
     if "absence" in groups:
         day["absent_hours"] = d.absent_hours
     if "late" in groups:
+        day["scheduled_start"] = d.scheduled_start.strftime("%H:%M:%S") if d.scheduled_start else None
         day["first_punch"] = d.first_in.strftime("%H:%M:%S") if d.first_in else None
         day["late_minutes"] = d.late_minutes
     return day
@@ -204,35 +200,42 @@ def worked_hours_for(punches: list[datetime]) -> tuple[float, bool]:
 def build_day(
     day: date,
     punches: list[datetime],
-    schedule: Schedule,
+    schedule: Optional[DaySchedule],
     on_leave: bool,
+    grace_minutes: int = 0,
 ) -> DayResult:
+    """schedule: what the employee was scheduled for that day (None = not scheduled)."""
     punches = sorted(punches)
-    scheduled = day.weekday() in schedule.work_days
     worked, missing = worked_hours_for(punches)
-
     result = DayResult(day=day, status="", punches=punches, worked_hours=worked, missing_punch=missing)
 
-    if not scheduled:
-        result.status = "Worked on off day" if punches else "Off day"
+    if schedule is None:
+        result.status = WORKED_NOT_SCHEDULED if punches else NOT_SCHEDULED
         return result
 
+    result.shift_name = schedule.shift_name
+    if schedule.holiday:
+        result.status = WORKED_HOLIDAY if punches else HOLIDAY
+        return result
+    if not schedule.is_workday:
+        result.status = WORKED_OFF_DAY if punches else OFF_DAY
+        return result
     if on_leave:
-        result.status = "On leave"
+        result.status = ON_LEAVE
         return result
 
-    result.expected_hours = round(schedule.expected_hours, 2)
+    result.scheduled_start = schedule.start
+    result.expected_hours = schedule.expected_hours
 
     if not punches:
-        result.status = "Absent"
+        result.status = ABSENT
         result.absent_hours = result.expected_hours
         return result
 
-    result.status = "Present"
-    shift_start = datetime.combine(day, schedule.start) + timedelta(minutes=schedule.grace_minutes)
-    if punches[0] > shift_start:
-        late = punches[0] - datetime.combine(day, schedule.start)
-        result.late_minutes = round(late.total_seconds() / 60, 1)
+    result.status = PRESENT
+    shift_start = datetime.combine(day, schedule.start)
+    if punches[0] > shift_start + timedelta(minutes=grace_minutes):
+        result.late_minutes = round((punches[0] - shift_start).total_seconds() / 60, 1)
     return result
 
 
@@ -247,13 +250,15 @@ def build_report(
     leaves: Iterable[tuple[str, datetime, datetime]],
     start: date,
     end: date,
-    schedule: Schedule,
+    schedule_for: Callable[[dict, date], Optional[DaySchedule]],
     today: Optional[date] = None,
     include_today: bool = False,
+    grace_minutes: int = 0,
 ) -> list[EmployeeReport]:
-    """employees: dicts with emp_code/name/department.
+    """employees: dicts with id/emp_code/name/department.
     transactions: raw BioTime transaction records.
     leaves: (emp_code, start_time, end_time) of approved leaves.
+    schedule_for(employee, day): the employee's schedule that day (app/shifts.py).
     include_today: count today even though it isn't over (used for "late
     today so far", where a check-in is already final).
     """
@@ -285,7 +290,9 @@ def build_report(
         days = []
         d = start
         while d <= last_day:
-            days.append(build_day(d, emp_punches.get(d, []), schedule, d in emp_leaves))
+            days.append(
+                build_day(d, emp_punches.get(d, []), schedule_for(emp, d), d in emp_leaves, grace_minutes)
+            )
             d += timedelta(days=1)
         reports.append(
             EmployeeReport(

@@ -411,3 +411,18 @@ h3.section-subheading { font-size: 14px; margin-top: 24px; }
 .new-key-row code { font-size: 14px; padding: 6px 10px; background: #fff; word-break: break-all; }
 
 .app-footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 0 24px; }
+
+/* ---------- Work schedule ---------- */
+.shift-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.shift-card { padding: 14px 18px; }
+.shift-card-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.shift-days { width: 100%; border-collapse: collapse; font-size: 13px; }
+.shift-days td { padding: 6px 0; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+.shift-days tr:last-child td { border-bottom: none; }
+.shift-days td:first-child { width: 42%; color: var(--muted); font-weight: 600; }
+.shift-off td { color: var(--muted); }
+
+.badge-holiday { background: #e0f2fe; color: #0369a1; }
+.badge-worked-on-holiday { background: #f3e8ff; color: #7e22ce; }
+.badge-not-scheduled { background: #eef0f4; color: #4b5563; }
+.badge-worked-not-scheduled { background: #fef9c3; color: #854d0e; }

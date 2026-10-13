@@ -8,9 +8,11 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api_keys import create_api_key
+from app.attendance import DAY_STATUSES
 from app.config import settings
 from app.database import get_db
 from app.models import ApiKey
+from app.shifts import load_shift_data
 from app.templating import templates
 
 router = APIRouter(tags=["integrations"])
@@ -29,13 +31,13 @@ ATTENDANCE_PARAMS = [
 
 ATTENDANCE_METRICS = [
     ("worked", "worked_hours", "Hours actually worked (check-in to check-out, summed)."),
-    ("worked", "expected_work_hours", "Scheduled hours in the period, excluding approved leave."),
+    ("worked", "expected_work_hours", "Hours scheduled by the employee's BioTime shifts in the period, excluding approved leave and holidays."),
     ("worked", "present_days", "Days with at least one punch."),
     ("worked", "missing_punch_days", "Days with a check-in but no matching check-out."),
-    ("absence", "absent_hours", "Scheduled hours on days with no punches and no approved leave."),
+    ("absence", "absent_hours", "Scheduled hours on workdays with no punches, no approved leave and no holiday."),
     ("absence", "absent_days", "Number of those days."),
     ("absence", "leave_days", "Scheduled days covered by approved leave (not counted as absent)."),
-    ("late", "late_hours", "Total time between shift start and first punch, on late days."),
+    ("late", "late_hours", "Total time between the shift's start and the first punch, on late days."),
     ("late", "late_count", "Number of days the employee arrived late."),
 ]
 
@@ -87,6 +89,8 @@ def _render(request: Request, db: Session, new_key: Optional[str] = None, new_ke
             "network_urls": network_urls,
             "base_url": base_url,
             "keys": db.query(ApiKey).order_by(ApiKey.created_at.desc()).all(),
+            "shift_data": load_shift_data(db),
+            "day_statuses": DAY_STATUSES,
             "new_key": new_key,
             "new_key_name": new_key_name,
             "example_key": new_key or "YOUR_API_KEY",

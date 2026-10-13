@@ -6,12 +6,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.attendance import Schedule, build_report, last_counted_day, resolve_metrics
+from app.attendance import IDLE_STATUSES, build_report, last_counted_day, resolve_metrics
 from app.biotime_client import BioTimeClient, BioTimeError, get_biotime_client
+from app.config import settings
 from app.api_keys import require_api_key
 from app.database import get_db
 from app.models import LeaveRequest
 from app.routers.employees import MAX_RECORDS, _department_name
+from app.shifts import describe_fallback, fallback_choice, get_shift_data
 from app.templating import templates
 
 router = APIRouter(tags=["reports"])
@@ -81,6 +83,7 @@ def _run_report(
     if emp_code:
         filters["emp_code"] = emp_code
     transactions = list(client.iter_all_transactions(**filters))
+    shift_data = get_shift_data(db, client)
 
     return build_report(
         employees,
@@ -88,8 +91,9 @@ def _run_report(
         _approved_leaves(db, start, end, emp_code),
         start,
         end,
-        Schedule.from_settings(),
+        shift_data.resolver(fallback_choice(db, shift_data)),
         include_today=include_today,
+        grace_minutes=settings.late_grace_minutes,
     )
 
 
@@ -167,7 +171,10 @@ def report_page(
         "report": REPORTS[kind],
         "reports_nav": REPORTS,
         "filters": {"start_date": start.isoformat(), "end_date": end.isoformat(), "emp_code": emp_code or ""},
-        "schedule": Schedule.from_settings(),
+        "idle_statuses": IDLE_STATUSES,
+        "grace_minutes": settings.late_grace_minutes,
+        "shift_data": None,
+        "fallback": "",
         "employees": [],
         "results": [],
         "selected": None,
@@ -183,6 +190,8 @@ def report_page(
         context["employees"] = employees
         results = _run_report(client, db, start, end, emp_code, employees)
         context["results"] = results
+        context["shift_data"] = shift_data = get_shift_data(db, client)
+        context["fallback"] = describe_fallback(shift_data, fallback_choice(db, shift_data))
         if emp_code and results:
             context["selected"] = results[0]
         elif emp_code:

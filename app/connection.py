@@ -20,6 +20,7 @@ from app.biotime_client import (
 )
 from app.config import settings
 from app.models import BioTimeConnection, LeaveRequest
+from app.shifts import clear_shift_data
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +62,9 @@ def test_connection(base_url: str, username: str, password: str) -> Optional[str
 def save_connection(db: Session, base_url: str, username: str, password: str) -> None:
     row = saved_connection(db)
     if row and row.base_url != base_url:
-        # Cached leaves belong to the old server; their ids would clash with the new one's.
+        # Cached leaves and shifts belong to the old server; their ids would clash with the new one's.
         db.query(LeaveRequest).delete()
+        clear_shift_data(db)
     if row is None:
         row = BioTimeConnection()
         db.add(row)

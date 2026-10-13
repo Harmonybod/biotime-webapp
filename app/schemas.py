@@ -39,3 +39,6 @@ class LeaveRequestCreate(BaseModel):
 class SyncResult(BaseModel):
     created: int
     updated: int
+    removed: int = 0
+    shifts: int = 0
+    schedules: int = 0

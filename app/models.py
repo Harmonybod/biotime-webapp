@@ -71,3 +71,13 @@ class ApiKey(Base):
     key_hash = Column(String, nullable=False, unique=True, index=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     last_used_at = Column(DateTime, nullable=True)
+
+
+class AppSetting(Base):
+    """Small key/value store for app state, e.g. the shift data synced from BioTime."""
+
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

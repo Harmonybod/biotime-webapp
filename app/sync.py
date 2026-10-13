@@ -52,17 +52,22 @@ def record_to_row_fields(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def sync_leaves(db: Session, client: BioTimeClient) -> dict[str, int]:
-    """Upsert every BioTime leave record into `leave_requests`, matched on biotime_id.
+    """Make `leave_requests` match BioTime: upsert every leave (matched on
+    biotime_id) and remove local rows whose leave no longer exists in BioTime
+    (e.g. deleted there). Rows are only removed after the full list was read,
+    so a failed sync never empties the table.
 
     Returns a small summary dict for logging / API responses.
     """
     created = 0
     updated = 0
+    seen: set[int] = set()
 
     for record in client.iter_all_leaves():
         biotime_id = record.get("id")
         if biotime_id is None:
             continue
+        seen.add(biotime_id)
 
         fields = record_to_row_fields(record)
         row = db.query(LeaveRequest).filter(LeaveRequest.biotime_id == biotime_id).one_or_none()
@@ -75,7 +80,12 @@ def sync_leaves(db: Session, client: BioTimeClient) -> dict[str, int]:
                 setattr(row, key, value)
             updated += 1
 
+    stale = db.query(LeaveRequest).filter(
+        (LeaveRequest.biotime_id.is_(None)) | (LeaveRequest.biotime_id.notin_(seen))
+    )
+    removed = stale.delete(synchronize_session=False)
+
     db.commit()
-    summary = {"created": created, "updated": updated}
+    summary = {"created": created, "updated": updated, "removed": removed}
     logger.info("BioTime leave sync complete: %s", summary)
     return summary

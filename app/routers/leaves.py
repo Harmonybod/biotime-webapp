@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -12,6 +13,7 @@ from app.database import get_db
 from app.models import LeaveRequest
 from app.pay_codes import leave_types
 from app.schemas import LeaveRequestCreate, LeaveRequestOut, SyncResult
+from app.shifts import sync_shifts
 from app.sync import record_to_row_fields, sync_leaves
 from app.templating import templates
 
@@ -40,7 +42,7 @@ def api_list_leaves(
 
 @router.post("/api/sync", response_model=SyncResult)
 def api_sync(db: Session = Depends(get_db), client: BioTimeClient = Depends(get_biotime_client)):
-    return sync_leaves(db, client)
+    return {**sync_leaves(db, client), **sync_shifts(db, client)}
 
 
 @router.post("/api/leaves", response_model=LeaveRequestOut)
@@ -115,10 +117,33 @@ def leaves_page(
 def sync_action(db: Session = Depends(get_db), client: BioTimeClient = Depends(get_biotime_client)):
     try:
         result = sync_leaves(db, client)
-        message = f"Synced: {result['created']} new, {result['updated']} updated."
-        return RedirectResponse(url=f"/leaves?message={message}", status_code=303)
+        shifts = sync_shifts(db, client)
+        message = (
+            f"Synced: {result['created']} new, {result['updated']} updated, "
+            f"{result['removed']} removed (no longer in BioTime). "
+            f"Work schedule: {shifts['shifts']} shift(s), {shifts['schedules']} employee schedule(s)."
+        )
+        return RedirectResponse(url=f"/leaves?message={quote(message)}", status_code=303)
     except BioTimeError as exc:
-        return RedirectResponse(url=f"/leaves?error={exc.message}", status_code=303)
+        return RedirectResponse(url=f"/leaves?error={quote(exc.message)}", status_code=303)
+
+
+@router.post("/leaves/{leave_id}/delete")
+def delete_leave(leave_id: int, db: Session = Depends(get_db), client: BioTimeClient = Depends(get_biotime_client)):
+    """Delete a leave request in BioTime, then from the local list."""
+    row = db.get(LeaveRequest, leave_id)
+    if row is None:
+        return RedirectResponse(url="/leaves?error=That leave request no longer exists.", status_code=303)
+    if row.biotime_id is not None:
+        try:
+            client.delete_leave(row.biotime_id)
+        except BioTimeError as exc:
+            if exc.status_code != 404:  # 404: already gone from BioTime, just drop it here
+                return RedirectResponse(url=f"/leaves?error={quote('BioTime refused: ' + exc.message)}", status_code=303)
+    name = row.employee_name or row.emp_code
+    db.delete(row)
+    db.commit()
+    return RedirectResponse(url=f"/leaves?message={quote(f'Deleted the leave request for {name}.')}", status_code=303)
 
 
 @router.get("/leaves/new")

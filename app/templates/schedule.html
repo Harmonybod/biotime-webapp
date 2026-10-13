@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Work Schedule{% endblock %}
+
+{% macro hm(hours) -%}
+  {%- set total = (hours * 60)|round|int -%}
+  {{ total // 60 }}h {{ "%02d"|format(total % 60) }}m
+{%- endmacro %}
+
+{% macro slots_text(slots) -%}
+  {%- for s in slots %}{{ s.label }}{% if s.cross_day %} (next day){% endif %} <span class="muted">{{ s.name }} · {{ hm(s.work_minutes / 60) }}</span>{% if not loop.last %}<br>{% endif %}{% else %}<span class="muted">Off</span>{% endfor -%}
+{%- endmacro %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Work Schedule</h1>
+    <form method="post" action="/shifts/sync">
+      <button type="submit" class="btn btn-secondary">Sync from BioTime</button>
+    </form>
+  </div>
+
+  <p class="intro-text">
+    The shifts set up in BioTime (Attendance → Timetable, Shift and Schedule). Worked hours, absences and late
+    arrivals, on the report pages and in the client API, are calculated against them. Change shifts in BioTime,
+    then click <strong>Sync from BioTime</strong>; it also syncs automatically with the leave requests.
+  </p>
+
+  {% if message %}<div class="flash flash-ok">{{ message }}</div>{% endif %}
+  {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+  {% if data %}
+    <p class="muted">Last synced: {{ data.synced_at.strftime("%d %b %Y %H:%M") if data.synced_at else "never" }}</p>
+
+    {# ---------------------------------------------------------------- #}
+    <h2 class="section-subheading">Shifts</h2>
+    {% if not shifts %}
+      <div class="flash flash-info">
+        No shifts are set up in BioTime yet. Create a timetable, a shift and employee schedules in BioTime
+        (Attendance → Timetable / Shift / Schedule), then sync. Until then, employees follow the setting below.
+      </div>
+    {% endif %}
+    <div class="shift-grid">
+      {% for shift in shifts %}
+        <div class="panel shift-card">
+          <div class="shift-card-head">
+            <strong>{{ shift.name }}</strong>
+            <span class="muted">
+              Repeats every {{ shift.cycle }} {{ shift.cycle_unit|lower }}{{ "" if shift.cycle == 1 else "s" }}
+              {%- if shift.weekly_hours is not none %} · {{ hm(shift.weekly_hours) }} a week{% endif %}
+            </span>
+          </div>
+          <table class="shift-days">
+            {% for label, slots in shift.display_days() %}
+              <tr class="{% if not slots %}shift-off{% endif %}"><td>{{ label }}</td><td>{{ slots_text(slots) }}</td></tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% endfor %}
+    </div>
+
+    {# ---------------------------------------------------------------- #}
+    <h2 class="section-subheading">Employee schedules</h2>
+    <table class="leave-table">
+      <thead><tr><th>Employee</th><th>Shift</th><th>From</th><th>To</th><th></th></tr></thead>
+      <tbody>
+        {% for row in assignments %}
+          <tr>
+            <td>{{ row.employee.name or "-" }} <span class="muted">({{ row.employee.emp_code }})</span></td>
+            <td>{{ row.shift }}</td>
+            <td>{{ row.start.strftime("%d %b %Y") }}</td>
+            <td>{{ row.end.strftime("%d %b %Y") }}</td>
+            <td><span class="badge badge-{{ 'approved' if row.state == 'Current' else 'cancelled' }}">{{ row.state }}</span></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="muted">No employee schedules in BioTime.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# ---------------------------------------------------------------- #}
+    <h2 class="section-subheading">Employees without a schedule in BioTime</h2>
+    <div class="panel">
+      <div class="panel-row">
+        <span class="panel-label">Employees</span>
+        <div>
+          {% for e in unscheduled %}{{ e.name or e.emp_code }} <span class="muted">({{ e.emp_code }})</span>{% if not loop.last %}, {% endif %}{% else %}<span class="muted">None: every employee has a schedule in BioTime.</span>{% endfor %}
+        </div>
+      </div>
+      <form method="post" action="/shifts/fallback" class="panel-row">
+        <span class="panel-label">They follow</span>
+        <select name="choice">
+          {% for shift in shifts %}
+            <option value="{{ shift.id }}" {% if choice == shift.id|string %}selected{% endif %}>The {{ shift.name }} shift</option>
+          {% endfor %}
+          <option value="{{ fallback_app_default }}" {% if choice == fallback_app_default %}selected{% endif %}>
+            The app's default schedule ({{ app_default_text }}, from .env)
+          </option>
+          <option value="{{ fallback_none }}" {% if choice == fallback_none %}selected{% endif %}>Not scheduled (worked hours only)</option>
+        </select>
+        <button type="submit" class="btn btn-small">Save</button>
+      </form>
+      <div class="panel-row muted">
+        Currently: {{ fallback_text }}. An employee whose BioTime schedule has ended counts as not scheduled after
+        the end date.
+      </div>
+    </div>
+
+    {# ---------------------------------------------------------------- #}
+    {% if temp %}
+      <h2 class="section-subheading">Temporary schedules</h2>
+      <table class="leave-table">
+        <thead><tr><th>Employee</th><th>Date</th><th>Hours</th></tr></thead>
+        <tbody>
+          {% for emp, day, slots in temp %}
+            <tr><td>{{ emp.name }} <span class="muted">({{ emp.emp_code }})</span></td><td>{{ day.strftime("%d %b %Y") }}</td><td>{{ slots_text(slots) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+
+    <h2 class="section-subheading">Holidays</h2>
+    <table class="leave-table">
+      <thead><tr><th>Holiday</th><th>From</th><th>To</th></tr></thead>
+      <tbody>
+        {% for name, start, end in data.holidays|sort(attribute="1") %}
+          <tr><td>{{ name }}</td><td>{{ start.strftime("%d %b %Y") }}</td><td>{{ end.strftime("%d %b %Y") }}</td></tr>
+        {% else %}
+          <tr><td colspan="3" class="muted">No holidays in BioTime.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p class="muted" style="margin-top: 16px;">
+      Late arrivals: {% if grace_minutes %}arriving up to {{ grace_minutes }} min after the shift start isn't counted as late{% else %}any arrival after the shift start counts as late{% endif %}
+      (<code>LATE_GRACE_MINUTES</code> in .env).
+    </p>
+  {% endif %}
+{% endblock %}

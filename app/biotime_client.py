@@ -202,6 +202,20 @@ class BioTimeClient:
                 break
             page = self._get_absolute(next_url)
 
+    def iter_all_records(self, path: str, page_size: int = 200, **filters):
+        """Yield every record from a paginated BioTime list endpoint, e.g. "/att/api/attshifts/"."""
+        page = self._request("GET", path, params={"page": 1, "page_size": page_size, **filters}).json()
+        while True:
+            for record in page.get("data", []):
+                yield record
+            next_url = page.get("next")
+            if not next_url:
+                break
+            page = self._get_absolute(next_url)
+
+    def delete_leave(self, leave_id: int) -> None:
+        self._request("DELETE", f"/att/api/leaves/{leave_id}/")
+
     # ------------------------------------------------------------------ #
     # Transactions (raw punches)
     # ------------------------------------------------------------------ #

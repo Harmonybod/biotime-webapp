@@ -34,10 +34,11 @@
   </form>
 
   <p class="intro-text">
-    Calculated from BioTime punches against the schedule
-    <strong>{{ schedule.start.strftime("%H:%M") }}–{{ schedule.end.strftime("%H:%M") }}</strong>
-    ({{ schedule.break_minutes }} min break, {{ hm(schedule.expected_hours) }} expected per workday{% if schedule.grace_minutes %}, {{ schedule.grace_minutes }} min late grace{% endif %}).
-    Punches are paired in order (in, out, in, out…). Approved leave from the last sync is not counted as absence.
+    Calculated from BioTime punches against each employee's shift in BioTime
+    {%- if shift_data and shift_data.synced_at %} (synced {{ shift_data.synced_at.strftime("%d %b %Y %H:%M") }}){% endif %};
+    employees without a schedule in BioTime follow {{ fallback }}.
+    <a href="/shifts">View work schedule</a>.
+    Punches are paired in order (in, out, in, out…). Approved leave and holidays are not counted as absence{% if grace_minutes %}, and arrivals up to {{ grace_minutes }} min after the shift start aren't late{% endif %}.
   </p>
 
   {% if today_excluded %}
@@ -51,6 +52,9 @@
   {% if selected %}
     {% set s = selected %}
     <h2 class="section-subheading">{{ s.name }} <span class="muted">({{ s.emp_code }}{% if s.department %} · {{ s.department }}{% endif %})</span></h2>
+    <p class="intro-text">
+      Shift: {% if s.shift_names %}<strong>{{ s.shift_names|join(", ") }}</strong>{% else %}not scheduled in this period{% endif %}
+    </p>
 
     <div class="stat-grid">
       <div class="stat {% if kind == 'worked-hours' %}stat-focus{% endif %}">
@@ -76,7 +80,7 @@
     </div>
 
     {% if kind == "worked-hours" %}
-      {% set days = s.days|selectattr("status", "ne", "Off day")|list %}
+      {% set days = s.days|rejectattr("status", "in", idle_statuses)|list %}
     {% elif kind == "absence" %}
       {% set days = s.days|selectattr("status", "in", ["Absent", "On leave"])|list %}
     {% else %}
@@ -102,7 +106,7 @@
           <tr>
             <td>{{ d.day.strftime("%a %d %b %Y") }}</td>
             <td>
-              <span class="badge badge-{{ d.status|lower|replace(' ', '-') }}">{{ d.status }}</span>
+              <span class="badge badge-{{ d.status|lower|replace(' ', '-')|replace('(', '')|replace(')', '') }}">{{ d.status }}</span>
               {% if d.missing_punch %}<span class="badge badge-pending">Missing punch</span>{% endif %}
             </td>
             {% if kind == "worked-hours" %}
@@ -114,7 +118,7 @@
             {% elif kind == "absence" %}
               <td>{{ hm(d.absent_hours) }}</td>
             {% else %}
-              <td>{{ schedule.start.strftime("%H:%M") }}</td>
+              <td>{{ d.scheduled_start.strftime("%H:%M") }} <span class="muted">{{ d.shift_name }}</span></td>
               <td>{{ d.first_in.strftime("%H:%M:%S") }}</td>
               <td>{{ hm(d.late_minutes / 60) }}</td>
             {% endif %}
@@ -182,7 +186,7 @@
           <tr>
             <td>{{ r.name or "-" }} <span class="muted">({{ r.emp_code }})</span></td>
             <td>{{ r.department }}</td>
-            <td>{{ schedule.start.strftime("%H:%M") }}</td>
+            <td>{{ d.scheduled_start.strftime("%H:%M") }} <span class="muted">{{ d.shift_name }}</span></td>
             <td>{{ d.first_in.strftime("%H:%M:%S") }}</td>
             <td>{{ hm(d.late_minutes / 60) }}</td>
           </tr>

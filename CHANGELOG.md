@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 — 2026-10-13
+
+- **Shifts come from BioTime**: timetables, shifts, employee schedules, temporary schedules and holidays
+  are synced over BioTime's API and used for every calculation (reports and client API), per employee
+  and per day. No more copying the schedule into `.env`.
+- New **Work Schedule** page showing the synced shifts (day by day), who follows which shift, holidays,
+  and what employees without a BioTime schedule follow (one of the shifts, or "not scheduled").
+- The API Integrations page shows which work schedule the calculations use; API day details include
+  `shift` and `scheduled_start`, and new day statuses (Holiday, Not scheduled, …).
+- **Leave requests deleted in BioTime are removed** from the app on the next sync.
+- **Delete leave requests from the app** (removes them in BioTime too).
+
 ## 1.1.1 — 2026-10-07
 
 - README and setup page are now general: no example addresses that match a specific BioTime server,

@@ -37,6 +37,19 @@
         {% endif %}
       </div>
     </div>
+    <div class="panel-row">
+      <span class="panel-label">Work schedule</span>
+      <div>
+        {% if shift_data %}
+          Calculations use the shifts from BioTime: {{ shift_data.shifts|length }} shift(s),
+          {{ shift_data.assignments|length }} employee schedule(s), synced
+          {{ shift_data.synced_at.strftime("%d %b %Y %H:%M") if shift_data.synced_at else "never" }}.
+        {% else %}
+          Calculations use the shifts from BioTime; they'll be synced on first use.
+        {% endif %}
+        <a href="/shifts">View work schedule</a>
+      </div>
+    </div>
     {% if not network_access %}
       <details class="panel-help">
         <summary>Let a system on another computer connect</summary>
@@ -119,7 +132,7 @@
 
   <h3 class="section-subheading">Attendance: <code>GET /api/reports/attendance</code></h3>
   <p class="intro-text">
-    Calculated from BioTime punches against the work schedule. Only completed days are counted: today is
+    Calculated from BioTime punches against each employee's shift in BioTime. Only completed days are counted: today is
     included once it's over, and <code>calculated_through</code> in the response shows the last day counted.
     Pick what you need with <code>metrics</code>; the groups <code>worked</code>, <code>absence</code> and
     <code>late</code> can be combined, or mixed with single field names.
@@ -145,7 +158,7 @@
   </table>
   <p class="intro-text" style="margin-top: 12px;">
     Every row also has <code>emp_code</code>, <code>name</code> and <code>department</code>. Hours are decimal
-    (8.5 = 8h 30m). Day <code>status</code> is one of Present, Absent, On leave, Off day, Worked on off day.
+    (8.5 = 8h 30m). Day <code>status</code> is one of {{ day_statuses|join(", ") }}; <code>shift</code> is the BioTime shift that applied (null when not scheduled).
   </p>
 
   <h3 class="section-subheading">Examples</h3>
@@ -183,10 +196,12 @@ X-API-Key: {{ example_key }}</pre>
         {
           "date": "2026-10-01",
           "status": "Present",
+          "shift": "Regular",
           "punches": ["09:21:00", "18:00:00"],
           "worked_hours": 8.65,
           "expected_hours": 9.0,
           "missing_punch": false,
+          "scheduled_start": "09:00:00",
           "first_punch": "09:21:00",
           "late_minutes": 21.0
         }

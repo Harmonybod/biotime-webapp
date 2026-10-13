@@ -2,12 +2,13 @@
 
 A small web app that works alongside **ZKBio Time (BioTime) v9** and runs on your own Windows PC:
 
-- **Leave requests**: see leave requests synced from BioTime and submit new ones (approvals stay in BioTime).
+- **Leave requests**: see leave requests synced from BioTime, submit new ones and delete them (approvals stay in BioTime). Leaves deleted in BioTime disappear from the app on the next sync.
+- **Work schedule**: the shifts, employee schedules and holidays set up in BioTime, synced automatically and used for every calculation.
 - **Manual punches**: add a check-in/check-out for an employee who forgot to punch (saved in BioTime as a Manual Log, optionally approved right away).
 - **Attendance reports**: **Worked Hours**, **Absence** and **Late Arrivals**, calculated from the punches in BioTime, for all employees or one employee at a time.
 - **Client API**: worked hours, absence and late arrivals (and leave requests) as JSON for an ERP or payroll system, protected by API keys you create on the **API Integrations** page.
 
-Current version: **1.1.1** (see [CHANGELOG.md](CHANGELOG.md)).
+Current version: **1.2.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
 The app works with **your own BioTime server**: nothing is pre-configured. Each installation asks for its BioTime address and login the first time it opens, and only talks to that server.
 
@@ -69,18 +70,18 @@ Not sure of the address? Open BioTime in your browser and copy everything before
 
 Click **Connect**. The app tests the login and tells you what's wrong if it can't connect. Once connected:
 
-1. Go to **Leave Requests** and click **Sync from BioTime** to load existing leave requests.
+1. Go to **Leave Requests** and click **Sync from BioTime**. This loads the leave requests and the work schedule (shifts) from your BioTime.
 2. Open **Worked Hours**, **Absence** or **Late Arrivals**, pick an employee and a date range.
 
 To change the BioTime connection later, click **BioTime Connection** in the top-right corner.
 
 ### Step 4: Match the app to your BioTime
 
-A few settings can't be read from BioTime automatically. Check them once:
+The app reads its settings from your BioTime, so there's very little to check:
 
 | What | Why | How |
 |---|---|---|
-| **Work schedule** | Worked hours, absence and late arrivals are calculated against it. | In BioTime, look up your shift under **Attendance → Timetable** (start, end, break) and **Shift** (which weekdays). Copy them into `.env` as `SHIFT_START`, `SHIFT_END`, `SHIFT_BREAK_MINUTES` and `SHIFT_WORK_DAYS` (see [Settings](#settings-env)), then restart the app. |
+| **Work schedule** | Worked hours, absence and late arrivals are calculated against each employee's shift. | Nothing to copy: shifts, employee schedules, temporary schedules and holidays are synced from BioTime (**Attendance → Timetable / Shift / Schedule / Holiday**). Open **Work Schedule** in the app to check them. For employees with **no schedule in BioTime**, choose on that page whether they follow one of your shifts or are "not scheduled". |
 | **Leave types** | The New Leave Request form needs your BioTime's leave types. | Click **Sync from BioTime** on the Leave Requests page: types used in existing leave requests are added automatically. For types never used yet, add one leave of that type in BioTime and sync again, or list them in `.env` as `LEAVE_TYPES=id:Name, id:Name`. |
 | **Approved leave** | Approved leave isn't counted as absence. | Leaves sync every 15 minutes automatically; click **Sync from BioTime** to update straight away. |
 | **Punches** | Reports only see punches that reached BioTime. | Make sure your devices upload to BioTime (**Attendance → Transactions** should show recent punches). |
@@ -154,7 +155,8 @@ python -m uvicorn app.main:app --port 8000
 | "Couldn't reach BioTime at …" | Check that the address opens BioTime in your browser, including the port. If BioTime is on another PC, that PC's firewall must allow the port. |
 | "BioTime rejected that username or password" | Use the same login you use on the BioTime website. |
 | New Leave Request has no leave types | See **Leave types** in [Step 4](#step-4-match-the-app-to-your-biotime). |
-| Hours, absences or late arrivals look wrong | Check the work schedule in `.env` matches your BioTime shift ([Step 4](#step-4-match-the-app-to-your-biotime)) and restart the app. |
+| Hours, absences or late arrivals look wrong | Open **Work Schedule** and click **Sync from BioTime**. Check each employee has the right shift there (or in BioTime under **Attendance → Schedule**), and what employees without a schedule follow. |
+| A leave deleted in BioTime still shows | Click **Sync from BioTime** on the Leave Requests page (it also happens automatically every 15 minutes). |
 | Reports show no hours | Check the date range, and that BioTime has punches for it (in BioTime: **Attendance → Transactions**). |
 | Start completely fresh | Close the app, delete `biotime.db` in the app folder (cached data and saved connection) and the folder `%LOCALAPPDATA%\biotime-webapp`, then run `start-server.bat` again. |
 
@@ -162,15 +164,17 @@ python -m uvicorn app.main:app --port 8000
 
 ## How the attendance reports are calculated
 
-The reports are calculated from BioTime's punch records (**Attendance → Transactions**), against the work schedule set in `.env` (default **08:00–17:00, Monday–Friday, 60-minute break = 8 hours a day**). Set it to match the shift in BioTime (**Attendance → Shift** and **Timetable**), see [Settings](#settings-env).
+The reports are calculated from BioTime's punch records (**Attendance → Transactions**), against each employee's **shift in BioTime** for that day: their schedule (**Attendance → Schedule**), the shift's timetables (start, end and work minutes), temporary schedules and holidays. All of this is synced from BioTime; see the **Work Schedule** page.
 
 - **Worked hours**: each day's punches are paired in time order (1st–2nd, 3rd–4th, …) and the durations are added up. A day with an odd number of punches is flagged **Missing punch**.
-- **Absence**: a scheduled workday with no punches and no approved leave. Absent hours = that day's expected hours. Approved leave comes from the last **Sync from BioTime**.
-- **Late arrivals**: the first punch of a workday after the shift start (plus an optional grace period).
+- **Expected hours**: the work minutes of that day's timetable(s) in the employee's shift. Days off in the shift, holidays and approved leave have none.
+- **Absence**: a scheduled workday with no punches, no approved leave and no holiday. Absent hours = that day's expected hours. Approved leave comes from the last **Sync from BioTime**.
+- **Late arrivals**: the first punch of a workday after that day's shift start (plus `LATE_GRACE_MINUTES`, default 0).
+- **Employees without a schedule in BioTime** follow the choice on the Work Schedule page: one of your shifts (the default when BioTime has exactly one), or "not scheduled", where only worked hours are counted.
 
 - **Only completed days count.** Today is included once it's over: until then, employees may not have arrived or checked out yet, so they'd look absent or short of hours. Late arrivals that already happened today are shown separately at the bottom of the Late Arrivals page. The API's `calculated_through` field gives the last day counted.
 
-The schedule is the same for every employee, and shifts that cross midnight aren't supported.
+Night shifts that cross midnight get their expected hours, but punches are grouped per calendar day, so worked hours across midnight are split over two days.
 
 ---
 
@@ -180,10 +184,8 @@ The schedule is the same for every employee, and shifts that cross midnight aren
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `SHIFT_START` / `SHIFT_END` | `08:00` / `17:00` | Scheduled working hours. |
-| `SHIFT_BREAK_MINUTES` | `60` | Unpaid break, subtracted from the expected hours. |
-| `SHIFT_WORK_DAYS` | `0,1,2,3,4` | Workdays: 0 = Monday … 6 = Sunday. |
-| `LATE_GRACE_MINUTES` | `0` | Minutes after shift start before an arrival counts as late. |
+| `LATE_GRACE_MINUTES` | `0` | Minutes after the shift start before an arrival counts as late. |
+| `SHIFT_START` / `SHIFT_END` / `SHIFT_BREAK_MINUTES` / `SHIFT_WORK_DAYS` | `08:00` / `17:00` / `60` / `0,1,2,3,4` | Optional "app default schedule", only used for employees without a BioTime schedule if you pick it on the Work Schedule page (e.g. when BioTime has no shifts). Workdays: 0 = Monday … 6 = Sunday. |
 | `API_NETWORK_ACCESS` | `false` | `true` lets systems on other computers call the client API (see below). |
 | `LEAVE_TYPES` | blank | Extra leave types as `id:Name, id:Name` (BioTime pay code ids). Types in synced leaves are found automatically. |
 | `SYNC_ENABLED` / `SYNC_INTERVAL_MINUTES` | `true` / `15` | Automatic leave sync from BioTime. |
@@ -240,7 +242,9 @@ uvicorn app.main:app --reload --port 8000
 - `app/main.py`: app wiring, startup (migrations, BioTime connection), redirect to `/setup` until connected, background sync job.
 - `app/biotime_client.py`: BioTime API client (auth, leaves, employees, transactions). `BIOTIME_AUTH_SCHEME` switches between `Token` and `JWT`.
 - `app/connection.py` and `app/routers/setup.py`: the BioTime Connection page; tests, saves and loads the connection.
+- `app/shifts.py`: syncs shifts, schedules, temporary schedules and holidays from BioTime, and works out each employee's schedule for a day.
 - `app/attendance.py`: worked-hours / absence / late calculations (pure functions).
+- `app/routers/schedule.py`: the Work Schedule page.
 - `app/routers/punches.py`: the Manual Punch page (BioTime `/att/api/manuallogs/`).
 - `app/routers/reports.py`: report pages and the attendance JSON API.
 - `app/routers/leaves.py`, `app/sync.py`: leave pages, JSON API and the BioTime → local cache sync.
@@ -255,7 +259,9 @@ uvicorn app.main:app --reload --port 8000
 | GET/POST | `/setup` | BioTime Connection page |
 | GET | `/leaves` | Leave requests (filter by department / emp_code / status) |
 | GET/POST | `/leaves/new` | New leave request form / submit to BioTime |
-| POST | `/sync` | Sync leaves from BioTime |
+| POST | `/sync` | Sync leaves (adds, updates, removes deleted ones) and shifts from BioTime |
+| POST | `/leaves/{id}/delete` | Delete a leave request in BioTime and the app |
+| GET/POST | `/shifts`, `/shifts/sync`, `/shifts/fallback` | Work Schedule page: synced shifts, sync now, what employees without a schedule follow |
 | GET/POST | `/punches` | Manual punches: list / add (check-in and/or check-out, optional auto-approve) |
 | POST | `/punches/{id}/approve`, `/punches/{id}/delete` | Approve or delete a manual punch in BioTime |
 | GET | `/reports/worked-hours`, `/reports/absence`, `/reports/late-arrivals` | Attendance report pages (`?emp_code=&start_date=&end_date=`) |

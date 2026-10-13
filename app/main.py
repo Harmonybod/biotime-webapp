@@ -21,7 +21,8 @@ from app.biotime_client import (
 from app.config import settings
 from app.connection import load_connection
 from app.database import SessionLocal
-from app.routers import employees, integrations, leaves, punches, reports, setup
+from app.routers import employees, integrations, leaves, punches, reports, schedule, setup
+from app.shifts import sync_shifts
 from app.sync import sync_leaves
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,7 @@ app.include_router(employees.router)
 app.include_router(integrations.router)
 app.include_router(reports.router)
 app.include_router(punches.router)
+app.include_router(schedule.router)
 app.include_router(setup.router)
 
 
@@ -75,7 +77,9 @@ def _scheduled_sync_job() -> None:
         return
     db = SessionLocal()
     try:
-        sync_leaves(db, get_biotime_client())
+        client = get_biotime_client()
+        sync_leaves(db, client)
+        sync_shifts(db, client)
     except Exception:
         logger.exception("Scheduled BioTime sync failed")
     finally:
